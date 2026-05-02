@@ -992,10 +992,15 @@ body::before {
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 // ═══════════════════════════════════════════════
-//  DATA LAYER
+//  SUPABASE + DATA LAYER
 // ═══════════════════════════════════════════════
+const SUPABASE_URL = "https://ecqcenkznwivsovnomjn.supabase.co";
+const SUPABASE_KEY = "sb_publishable_ZeGAsY811rEb2FFyZo2nTg_6wxzsee8";
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
 var DB = {
   load:function(k){try{return JSON.parse(localStorage.getItem(k)||'[]')}catch(e){return[]}},
   save:function(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){showToast('⚠ Erro ao salvar')}},
@@ -1006,6 +1011,69 @@ var DB = {
   saveCobracas:function(v){this.save('avcb_cobracas',v)},
   saveChecklists:function(v){this.save('avcb_checklists',v)}
 };
+
+async function carregarClientesDaNuvem(){
+  try{
+    var resp = await supabaseClient
+      .from('clientes')
+      .select('*')
+      .order('criado_em', { ascending:false });
+
+    if(resp.error){
+      console.log(resp.error);
+      showToast('⚠ Erro ao carregar clientes da nuvem');
+      return;
+    }
+
+    var convertidos = (resp.data||[]).map(function(c){
+      return {
+        id: c.id,
+        nome: c.nome || '',
+        tipo: c.tipo || '',
+        resp: c.responsavel || '',
+        tel: c.telefone || '',
+        area: '',
+        andares: '',
+        end: '',
+        venc: c.vencimento || '',
+        obs: '',
+        criado: c.criado_em || new Date().toISOString()
+      };
+    });
+
+    DB.saveClientes(convertidos);
+    refreshAll();
+  }catch(e){
+    console.log(e);
+    showToast('⚠ Falha na conexão com a nuvem');
+  }
+}
+
+async function salvarClienteNaNuvem(cliente){
+  var resp = await supabaseClient
+    .from('clientes')
+    .insert([{
+      nome: cliente.nome,
+      tipo: cliente.tipo,
+      responsavel: cliente.resp,
+      telefone: cliente.tel,
+      vencimento: cliente.venc
+    }])
+    .select()
+    .single();
+
+  if(resp.error) throw resp.error;
+  return resp.data;
+}
+
+async function deletarClienteNaNuvem(id){
+  var resp = await supabaseClient
+    .from('clientes')
+    .delete()
+    .eq('id', id);
+
+  if(resp.error) throw resp.error;
+}
 
 var TEMPLATE = [
   {cat:'🧯 Extintores',items:[
@@ -1105,32 +1173,53 @@ function daysChip(d){
 }
 
 // ═══ CLIENTES ═══
-function salvarCliente(){
+async function salvarCliente(){
   var nome=document.getElementById('c-nome').value.trim();
   var venc=document.getElementById('c-venc').value;
   if(!nome||!venc){showToast('⚠ Preencha nome e vencimento!');return}
-  var cls=DB.clientes();
-  cls.push({
-    id:Date.now().toString(),nome,
+
+  var cliente={
+    id:Date.now().toString(),
+    nome:nome,
     tipo:document.getElementById('c-tipo').value,
     resp:document.getElementById('c-resp').value.trim(),
     tel:document.getElementById('c-tel').value.trim(),
     area:document.getElementById('c-area').value,
     andares:document.getElementById('c-andares').value,
     end:document.getElementById('c-end').value.trim(),
-    venc,obs:document.getElementById('c-obs').value.trim(),
+    venc:venc,
+    obs:document.getElementById('c-obs').value.trim(),
     criado:new Date().toISOString()
-  });
-  DB.saveClientes(cls);
-  ['c-nome','c-resp','c-tel','c-area','c-andares','c-end','c-venc','c-obs'].forEach(function(f){document.getElementById(f).value=''});
-  closeModal('modal-cliente');
-  showToast('✅ Cliente salvo com sucesso!');
-  refreshAll();
+  };
+
+  try{
+    var salvo=await salvarClienteNaNuvem(cliente);
+    cliente.id=salvo.id;
+    cliente.criado=salvo.criado_em;
+
+    var cls=DB.clientes();
+    cls.unshift(cliente);
+    DB.saveClientes(cls);
+
+    ['c-nome','c-resp','c-tel','c-area','c-andares','c-end','c-venc','c-obs'].forEach(function(f){document.getElementById(f).value=''});
+    closeModal('modal-cliente');
+    showToast('✅ Cliente salvo na nuvem!');
+    await carregarClientesDaNuvem();
+  }catch(e){
+    console.log(e);
+    showToast('❌ Erro ao salvar na nuvem: '+(e.message||'verifique o Supabase'));
+  }
 }
-function deleteCliente(id){
+async function deleteCliente(id){
   if(!confirm('Remover este cliente?'))return;
-  DB.saveClientes(DB.clientes().filter(function(c){return c.id!==id}));
-  refreshAll();showToast('🗑 Cliente removido');
+  try{
+    await deletarClienteNaNuvem(id);
+    DB.saveClientes(DB.clientes().filter(function(c){return c.id!==id}));
+    refreshAll();showToast('🗑 Cliente removido da nuvem');
+  }catch(e){
+    console.log(e);
+    showToast('⚠ Erro ao remover na nuvem: '+(e.message||'verifique o Supabase'));
+  }
 }
 function renderClientes(){
   var cls=DB.clientes();
@@ -1294,12 +1383,9 @@ function renderChecklistSelect(){
   if(!cls.length){btns.innerHTML='';nosel.style.display='flex';return}
   nosel.style.display='none';
   btns.innerHTML=cls.map(function(c,i){
-    var active=currentClienteId===c.id;
-    return '<button class="btn '+(active?'b-red':'b-ghost')+' open-check-btn" data-id="'+c.id+'">'+initials(c.nome)+' '+c.nome+'</button>';
+    var av=avC(i),active=currentClienteId===c.id;
+    return '<button class="btn '+(active?'b-red':'b-ghost')+'" onclick="editarChecklist(\''+c.id+'\')">'+initials(c.nome)+' '+c.nome+'</button>';
   }).join('');
-  btns.querySelectorAll('.open-check-btn').forEach(function(el){
-    el.addEventListener('click',function(){editarChecklist(this.getAttribute('data-id'));});
-  });
 }
 function editarChecklist(id){
   currentClienteId=id;
@@ -1307,145 +1393,102 @@ function editarChecklist(id){
   document.getElementById('cl-content').style.display='block';
   document.getElementById('cl-botbar').style.display='flex';
   document.getElementById('cl-clientname').textContent=c.nome;
-  document.getElementById('cl-clienttype').textContent=c.tipo+(c.area?' · '+Number(c.area).toLocaleString()+'m²':'');
+  document.getElementById('cl-clienttype').textContent=c.tipo;
   document.getElementById('cl-venc').textContent=fmtDate(c.venc);
   document.getElementById('cl-resp').textContent=c.resp||'—';
   document.getElementById('cl-bot-name').textContent=c.nome;
-  var state=loadState();
-  renderCats(state);renderItems(state,0);updateProgress(state);renderChecklistSelect();
-  document.getElementById('cl-content').scrollIntoView({behavior:'smooth',block:'start'});
+  document.getElementById('cl-bot-info').textContent='AVCB vence em '+getDaysLeft(c.venc)+' dias';
+  renderChecklistCats();renderChecklistItems();renderChecklistProgress();renderChecklistSelect();goTab('checklist',document.querySelectorAll('.tb')[3]);
 }
-function renderCats(state){
-  document.getElementById('cl-cats').innerHTML=TEMPLATE.map(function(cat,ci){
-    var done=cat.items.filter(function(_,ii){return state[ci+'_'+ii]&&state[ci+'_'+ii].status!=='pend'}).length;
-    var allOk=cat.items.every(function(_,ii){return state[ci+'_'+ii]&&state[ci+'_'+ii].status==='ok'});
-    var hasBad=cat.items.some(function(_,ii){return state[ci+'_'+ii]&&state[ci+'_'+ii].status==='bad'});
-    var ico=allOk?'✅':hasBad?'⚠️':done===0?'○':'🔵';
-    return '<div class="clcat'+(currentCat===ci?' on':'')+'" onclick="selectCat('+ci+')">'
-      +'<span class="ccico">'+cat.cat.split(' ')[0]+'</span>'
-      +'<span class="ccname">'+cat.cat.replace(/^\S+\s/,'')+'</span>'
-      +'<span class="cccnt">'+done+'/'+cat.items.length+'</span>'
-      +'<span class="ccsta">'+ico+'</span></div>';
+function iniciarVistoria(){
+  var id=document.getElementById('cl-sel-cliente').value;if(!id){showToast('⚠ Selecione um cliente');return}
+  closeModal('modal-checklist');editarChecklist(id);
+}
+function renderChecklistCats(){
+  var st=loadState(),el=document.getElementById('cl-cats');
+  el.innerHTML=TEMPLATE.map(function(cat,ci){
+    var total=cat.items.length,ok=0,bad=0;
+    cat.items.forEach(function(_,ii){var s=st[ci+'_'+ii].status;if(s==='ok')ok++;if(s==='bad')bad++});
+    var status=ok+bad===total?'✅':ok+bad>0?'◐':'○';
+    return '<div class="clcat '+(currentCat===ci?'on':'')+'" onclick="currentCat='+ci+';renderChecklistCats();renderChecklistItems()">'
+      +'<span class="ccico">'+cat.cat.split(' ')[0]+'</span><span class="ccname">'+cat.cat.substring(2)+'</span>'
+      +'<span class="cccnt">'+(ok+bad)+'/'+total+'</span><span class="ccsta">'+status+'</span></div>';
   }).join('');
 }
-function selectCat(ci){
-  currentCat=ci;var state=loadState();
-  renderCats(state);renderItems(state,ci);
-  document.getElementById('cl-cattitle').textContent=TEMPLATE[ci].cat+' — '+TEMPLATE[ci].items.length+' itens';
-}
-function renderItems(state,ci){
-  var cat=TEMPLATE[ci];
-  document.getElementById('cl-cattitle').textContent=cat.cat+' — '+cat.items.length+' itens';
-  document.getElementById('cl-items-list').innerHTML=cat.items.map(function(item,ii){
-    var key=ci+'_'+ii,st=state[key]||{status:'pend',note:'',photos:0};
-    var cls2=st.status==='ok'?'ok':st.status==='bad'?'bad':'';
-    var chk=st.status==='ok'?'✓':st.status==='bad'?'✗':'';
-    var pbtn=st.photos>0
-      ?(st.status==='bad'?'<button class="clipbtn hpbf">📷 '+st.photos+' foto(s)</button>':'<button class="clipbtn hpb">📷 '+st.photos+' foto(s)</button>')
-      :'<button class="clipbtn" onclick="addFoto(\''+key+'\')">📷 Foto</button>';
-    var thumbs='';
-    if(st.status!=='pend'){
-      thumbs='<div class="clthumbs">';
-      var bgs=['background:linear-gradient(135deg,#1a3a1a,#0d200d)','background:linear-gradient(135deg,#3a1a1a,#200d0d)','background:linear-gradient(135deg,#1a1a3a,#0d0d20)'];
-      var ems=['🧯','✅','⚠️','📸','🏷️'];
-      for(var p=0;p<st.photos;p++)thumbs+='<div class="thumb" style="'+bgs[p%3]+'">'+ems[p%5]+'</div>';
-      thumbs+='<button class="tadd" onclick="addFoto(\''+key+'\')">＋</button></div>';
-    }
-    var note=(st.status==='bad'&&st.note)?'<div class="clnote">⚠ '+st.note+'</div>'
-      :(st.status==='bad'?'<div class="clnote" onclick="editNote(\''+key+'\')">⚠ Clique para descrever a não conformidade...</div>':'');
-    var acts=st.status==='pend'
-      ?'<div class="clacts"><button class="clact cao" onclick="markItem(\''+key+'\',\'ok\')">✔ Aprovado</button><button class="clact cab" onclick="markItem(\''+key+'\',\'bad\')">✗ Reprovado</button></div>'
-      :'<div class="clacts"><button class="clact" style="color:var(--muted);font-size:11px" onclick="markItem(\''+key+'\',\'pend\')">↩ Desfazer</button></div>';
-    return '<div class="cli '+cls2+'"><div class="clrow"><div class="clchk">'+chk+'</div>'
-      +'<div class="clitext"><div class="cliiname">'+item.name+'</div><div class="cliidesc">'+item.desc+'</div></div>'
-      +pbtn+'</div>'+thumbs+note+acts+'</div>';
+function renderChecklistItems(){
+  var st=loadState(),cat=TEMPLATE[currentCat];
+  document.getElementById('cl-cattitle').textContent=cat.cat;
+  document.getElementById('cl-items-list').innerHTML=cat.items.map(function(it,ii){
+    var key=currentCat+'_'+ii,s=st[key];
+    return '<div class="cli '+(s.status==='ok'?'ok':s.status==='bad'?'bad':'')+'">'
+      +'<div class="clrow" onclick="toggleItem(\''+key+'\')">'
+      +'<div class="clchk">'+(s.status==='ok'?'✓':s.status==='bad'?'✗':'')+'</div>'
+      +'<div class="clitext"><div class="cliiname">'+it.name+'</div><div class="cliidesc">'+it.desc+'</div></div>'
+      +'<button class="clipbtn '+(s.photos>0?'hpb':'')+'" onclick="event.stopPropagation();addPhoto(\''+key+'\')">📷 '+s.photos+'</button>'
+      +'</div>'
+      +(s.photos>0?'<div class="clthumbs">'+Array(s.photos).fill(0).map(function(_,i){return '<div class="thumb">📸</div>'}).join('')+'<button class="tadd" onclick="addPhoto(\''+key+'\')">＋</button></div>':'')
+      +(s.status==='bad'?'<div class="clnote">⚠ Não conformidade detectada. Necessária correção antes da aprovação.</div>':'')
+      +'<div class="clacts"><button class="clact cao" onclick="setItem(\''+key+'\',\'ok\')">Aprovar</button><button class="clact cab" onclick="setItem(\''+key+'\',\'bad\')">Reprovar</button></div>'
+      +'</div>';
   }).join('');
 }
-function markItem(key,status){
-  var state=loadState();
-  if(!state[key])state[key]={status:'pend',note:'',photos:0};
-  state[key].status=status;
-  if(status!=='pend'&&!state[key].photos)state[key].photos=1;
-  saveState(state);renderItems(state,currentCat);renderCats(state);updateProgress(state);
-}
-function addFoto(key){
-  var state=loadState();
-  if(!state[key])state[key]={status:'pend',note:'',photos:0};
-  state[key].photos=(state[key].photos||0)+1;
-  saveState(state);renderItems(state,currentCat);showToast('📸 Foto adicionada!');
-}
-function editNote(key){
-  var txt=prompt('Descreva a não conformidade:');if(txt===null)return;
-  var state=loadState();if(!state[key])state[key]={status:'bad',note:'',photos:0};
-  state[key].note=txt;saveState(state);renderItems(state,currentCat);
-}
-function updateProgress(state){
-  var total=0,ok=0,bad=0,pend=0;
-  TEMPLATE.forEach(function(cat,ci){cat.items.forEach(function(_,ii){
-    total++;var s=state[ci+'_'+ii];
-    if(!s||s.status==='pend')pend++;else if(s.status==='ok')ok++;else bad++;
-  })});
-  var done=ok+bad,pct=total>0?Math.round(done/total*100):0;
-  document.getElementById('cl-prog-label').textContent=done+' / '+total+' itens';
+function toggleItem(k){var st=loadState();st[k].status=st[k].status==='ok'?'pend':'ok';saveState(st);renderChecklistItems();renderChecklistProgress();renderChecklistCats()}
+function setItem(k,s){var st=loadState();st[k].status=s;saveState(st);renderChecklistItems();renderChecklistProgress();renderChecklistCats()}
+function addPhoto(k){var st=loadState();st[k].photos++;saveState(st);showToast('📸 Foto anexada ao item');renderChecklistItems()}
+function renderChecklistProgress(){
+  if(!currentClienteId)return;
+  var st=loadState(),total=0,ok=0,bad=0,pend=0;
+  TEMPLATE.forEach(function(cat,ci){cat.items.forEach(function(_,ii){total++;var s=st[ci+'_'+ii].status;if(s==='ok')ok++;else if(s==='bad')bad++;else pend++})});
+  var done=ok+bad,pct=Math.round(done/total*100);
+  document.getElementById('cl-prog-label').textContent=done+' / '+total;
   document.getElementById('cl-prog-bar').style.width=pct+'%';
   document.getElementById('cl-cnt-ok').textContent='✔ '+ok+' ok';
   document.getElementById('cl-cnt-bad').textContent='✗ '+bad+' reprov.';
   document.getElementById('cl-cnt-pend').textContent=pend+' pend.';
-  var fotos=0;Object.values(state).forEach(function(s){fotos+=(s.photos||0)});
-  document.getElementById('cl-bot-info').textContent=done+' de '+total+' itens · '+fotos+' foto(s) · '+bad+' não conformidade(s)';
 }
-function iniciarVistoria(){
-  var id=document.getElementById('cl-sel-cliente').value;
-  if(!id){showToast('⚠ Selecione um cliente!');return}
-  closeModal('modal-checklist');
-  goTab('checklist',document.querySelectorAll('.tb')[3]);
-  editarChecklist(id);
-}
-function salvarChecklist(){if(!currentClienteId){showToast('⚠ Nenhuma vistoria ativa!');return}showToast('💾 Salvo com sucesso!')}
+function salvarChecklist(){showToast('💾 Checklist salvo localmente')}
 function gerarPDF(){
-  if(!currentClienteId){showToast('⚠ Nenhuma vistoria ativa!');return}
-  var c=DB.clientes().find(function(x){return x.id===currentClienteId}),state=loadState();
-  var ok=0,bad=0,pend=0,total=0;
-  TEMPLATE.forEach(function(cat,ci){cat.items.forEach(function(_,ii){
-    total++;var s=state[ci+'_'+ii];
-    if(!s||s.status==='pend')pend++;else if(s.status==='ok')ok++;else bad++;
-  })});
-  alert('📄 RELATÓRIO DE VISTORIA — AVCBtrack\n\nCliente: '+c.nome+'\nData: '+new Date().toLocaleDateString('pt-BR')+'\n\n✅ Aprovados:  '+ok+'\n⚠ Reprovados: '+bad+'\n⏳ Pendentes:  '+pend+'\nTotal: '+total+' itens\n\n(Em produção, isso geraria um PDF com fotos e assinatura digital!)');
+  if(!currentClienteId){showToast('⚠ Selecione uma vistoria');return}
+  var c=DB.clientes().find(function(x){return x.id===currentClienteId});
+  var st=loadState(),ok=0,bad=0,pend=0;
+  TEMPLATE.forEach(function(cat,ci){cat.items.forEach(function(_,ii){var s=st[ci+'_'+ii].status;if(s==='ok')ok++;else if(s==='bad')bad++;else pend++})});
+  alert('📄 RELATÓRIO DE VISTORIA — AVCBtrack\n\nEdificação: '+c.nome+'\nTipo: '+c.tipo+'\nVencimento AVCB: '+fmtDate(c.venc)+'\n\n✅ Aprovados: '+ok+'\n❌ Reprovados: '+bad+'\n⏳ Pendentes: '+pend+'\n\nRelatório pronto para exportação.');
 }
 
 // ═══ DASHBOARD ═══
 function renderDashboard(){
-  var now=new Date();
-  document.getElementById('dash-date').textContent=now.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   var cls=DB.clientes(),ok=0,warn=0,crit=0;
-  cls.forEach(function(c){var s=getStatus(getDaysLeft(c.venc));if(s==='ok')ok++;else if(s==='warn')warn++;else crit++;});
+  cls.forEach(function(c){var s=getStatus(getDaysLeft(c.venc));if(s==='ok')ok++;else if(s==='warn')warn++;else crit++});
   document.getElementById('d-ok').textContent=ok;
   document.getElementById('d-warn').textContent=warn;
   document.getElementById('d-crit').textContent=crit;
   document.getElementById('d-total').textContent=cls.length;
-  var alerts=cls.map(function(c){return{c,days:getDaysLeft(c.venc)}}).filter(function(x){return x.days<30}).sort(function(a,b){return a.days-b.days});
+  document.getElementById('dash-date').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  var alerts=cls.filter(function(c){return getDaysLeft(c.venc)<=30}).sort(function(a,b){return getDaysLeft(a.venc)-getDaysLeft(b.venc)});
   var el=document.getElementById('dash-alerts');
-  if(!alerts.length){el.innerHTML='<div class="empty"><div class="eico">✅</div><p>Todos os clientes estão em dia</p></div>';return}
-  el.innerHTML='<div>'+alerts.map(function(a,i){
-    var d=a.days,cl2=d<0?'var(--red)':d<=7?'var(--red)':'var(--yellow)';
-    var label=d<0?'Venceu há '+Math.abs(d)+'d':'Vence em '+d+'d';
-    var av=avC(i);
-    return '<div class="alert-row"><div class="av" style="background:'+av.bg+';color:'+av.cl+'">'+initials(a.c.nome)+'</div>'
-      +'<div class="ar-info"><div class="ar-name">'+a.c.nome+'</div><div class="ar-type">'+a.c.tipo+'</div></div>'
-      +'<div class="ar-label" style="color:'+cl2+'">'+label+'</div>'
-      +'<button class="btn b-ghost" style="font-size:12px;padding:6px 14px" onclick="editarChecklist(\''+a.c.id+'\')">Vistoria →</button>'
-      +'</div>';
-  }).join('')+'</div>';
+  if(!alerts.length){el.innerHTML='<div class="empty"><div class="eico">✅</div><p>Nenhum alerta crítico no momento</p></div>';return}
+  el.innerHTML=alerts.slice(0,6).map(function(c,i){
+    var d=getDaysLeft(c.venc),s=getStatus(d),av=avC(i);
+    return '<div class="alert-row"><div class="av" style="background:'+av.bg+';color:'+av.cl+'">'+initials(c.nome)+'</div>'
+      +'<div class="ar-info"><div class="ar-name">'+c.nome+'</div><div class="ar-type">'+c.tipo+' · '+(c.resp||'sem responsável')+'</div></div>'
+      +'<div class="ar-label" style="color:'+(s==='crit'?'var(--red)':s==='warn'?'var(--yellow)':'var(--green)')+'">'+(d<0?'Vencido há '+Math.abs(d)+'d':'Vence em '+d+'d')+'</div>'
+      +'<button class="chip" onclick="editarChecklist(\''+c.id+'\')">📸 Vistoria</button></div>';
+  }).join('');
 }
 
-// ═══ TOAST ═══
 function showToast(msg){
-  var t=document.createElement('div');t.className='toast';
-  t.textContent=msg;document.body.appendChild(t);
-  setTimeout(function(){t.remove()},2800);
+  var t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);
+  setTimeout(function(){t.remove()},2600);
 }
 
-// ═══ PERFIL DO CLIENTE ═══
+// ═══ PERFIL CLIENTE ═══
+function whatsappCliente(tel,nome){
+  var clean=(tel||'').replace(/\D/g,'');
+  if(!clean){showToast('⚠ Cliente sem telefone cadastrado');return}
+  if(clean.length<=11)clean='55'+clean;
+  var msg='Olá, '+nome+'! Estamos entrando em contato sobre o controle do AVCB da sua edificação.';
+  window.open('https://wa.me/'+clean+'?text='+encodeURIComponent(msg),'_blank');
+}
 function abrirPerfil(id){
   var c=DB.clientes().find(function(x){return x.id===id});
   if(!c)return;
@@ -1471,41 +1514,24 @@ function abrirPerfil(id){
     +'</div>'
     +'<div class="perfil-grid">'
     +'<div class="perfil-item"><div class="perfil-k">Responsável</div><div class="perfil-v">'+(c.resp||'—')+'</div></div>'
-    +'<div class="perfil-item"><div class="perfil-k">Telefone / WhatsApp</div><div class="perfil-v">'+(c.tel?'<a href="https://wa.me/55'+c.tel.replace(/\D/g,'')+'" target="_blank" style="color:var(--green);text-decoration:none;">'+c.tel+' 📲</a>':'—')+'</div></div>'
+    +'<div class="perfil-item"><div class="perfil-k">Telefone / WhatsApp</div><div class="perfil-v">'+(c.tel?'<button class="chip cg" onclick="whatsappCliente(\''+c.tel+'\',\''+c.nome.replace(/'/g,"\\'")+'\')">📲 '+c.tel+'</button>':'—')+'</div></div>'
     +'<div class="perfil-item"><div class="perfil-k">Área</div><div class="perfil-v">'+(c.area?Number(c.area).toLocaleString()+' m²':'—')+'</div></div>'
     +'<div class="perfil-item"><div class="perfil-k">Andares</div><div class="perfil-v">'+(c.andares||'—')+'</div></div>'
-    +'<div class="perfil-item" style="grid-column:1/-1;border-right:none;"><div class="perfil-k">Endereço</div><div class="perfil-v">'+(c.end||'—')+'</div></div>'
+    +'<div class="perfil-item" style="grid-column:1/-1"><div class="perfil-k">Endereço</div><div class="perfil-v">'+(c.end||'—')+'</div></div>'
+    +'</div>'
+    +(c.obs?'<div class="perfil-obs">'+c.obs+'</div>':'')
+    +'<div style="padding:0 22px 18px;display:flex;gap:8px;flex-wrap:wrap">'
+    +'<button class="btn b-red" onclick="whatsappCliente(\''+(c.tel||'')+'\',\''+c.nome.replace(/'/g,"\\'")+'\')">📲 Abrir WhatsApp</button>'
+    +'<button class="btn b-ghost" onclick="editarChecklist(\''+c.id+'\');closeModal(\'modal-perfil\')">📸 Checklist</button>'
     +'</div>';
 
-  if(c.obs){
-    html+='<div style="padding:0 22px 4px;font-family:var(--f-cond);font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-top:14px;">Observações</div>'
-      +'<div class="perfil-obs">'+c.obs+'</div>';
-  }
-
-  // cobranças do cliente
-  var cobs=DB.cobracas().filter(function(x){return x.clienteId===id});
-  if(cobs.length){
-    html+='<div style="padding:0 22px 8px;font-family:var(--f-cond);font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-top:14px;">Cobranças</div>'
-      +'<div style="margin:0 22px 18px;display:flex;flex-direction:column;gap:6px;">';
-    cobs.forEach(function(cb){
-      var badge=cb.status==='pago'?'<span class="badge bg">Pago</span>':cb.status==='pendente'?'<span class="badge by">Pendente</span>':'<span class="badge bf">Vencido</span>';
-      html+='<div style="display:flex;align-items:center;justify-content:space-between;background:var(--raised);padding:10px 13px;border-radius:5px;">'
-        +'<div style="font-size:13px;">'+cb.desc+'</div>'
-        +'<div style="display:flex;align-items:center;gap:10px;">'
-        +'<span style="font-family:var(--f-cond);font-weight:700;">'+fmtMoney(cb.valor)+'</span>'
-        +badge+'</div></div>';
-    });
-    html+='</div>';
-  }
-
   document.getElementById('perfil-body').innerHTML=html;
-  var btnV=document.getElementById('perfil-btn-vistoria');
-  btnV.dataset.clienteId=id;
-  btnV.onclick=function(){closeModal('modal-perfil');editarChecklist(this.dataset.clienteId);};
+  document.getElementById('perfil-btn-vistoria').onclick=function(){closeModal('modal-perfil');editarChecklist(c.id)};
+  document.getElementById('perfil-btn-edit').onclick=function(){showToast('✏ Edição completa será adicionada na próxima versão')};
   openModal('modal-perfil');
 }
 
-// ═══ NOTIFICAÇÕES DE VENCIMENTO AVCB ═══
+// ═══ NOTIFICAÇÕES DE VENCIMENTO ═══
 function renderNotifs(){
   var cls=DB.clientes();
   var el=document.getElementById('dash-notifs');
@@ -1533,8 +1559,8 @@ function renderNotifs(){
     html+='<div class="notif-banner warn">'
       +'<span class="notif-ico">⚠️</span>'
       +'<div class="notif-body">'
-      +'<div class="notif-title">'+urgentes.length+' AVCB'+( urgentes.length>1?'s':'')+' VENCE'+( urgentes.length>1?'M':'')+' EM ATÉ 7 DIAS</div>'
-      +'<div class="notif-sub">'+urgentes.map(function(c){return c.nome+' ('+getDaysLeft(c.venc)+'d)'}).join(', ')+' — Agende a vistoria urgente.</div>'
+      +'<div class="notif-title">'+urgentes.length+' AVCB'+( urgentes.length>1?'s':'')+' VENCENDO EM ATÉ 7 DIAS</div>'
+      +'<div class="notif-sub">'+urgentes.map(function(c){return c.nome+' ('+getDaysLeft(c.venc)+'d)'}).join(', ')+'</div>'
       +'</div>'
       +'<button class="btn b-ghost" style="font-size:11px;padding:6px 14px;flex-shrink:0;border-color:rgba(232,160,0,.3);color:var(--yellow)" onclick="filterStatus(\'warn\');goTab(\'clientes\',document.querySelectorAll(\'.tb\')[1])">Ver →</button>'
       +'</div>';
@@ -1557,8 +1583,9 @@ function renderNotifs(){
 function refreshAll(){renderDashboard();renderNotifs();renderClientes();renderFinanceiro();renderChecklistSelect()}
 
 // ═══ INIT ═══
-window.onload=function(){
+window.onload=async function(){
   refreshAll();
+  await carregarClientesDaNuvem();
   if(!DB.clientes().length) showToast('👋 Bem-vindo ao AVCBtrack! Cadastre seu primeiro cliente.');
 };
 </script>
