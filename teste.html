@@ -643,7 +643,7 @@ body::before { content:''; position:fixed; inset:0; z-index:0; pointer-events:no
 //  Cole aqui as suas credenciais do Supabase
 // ══════════════════════════════════════════════
 const SUPABASE_URL =  'https://ecqcenkznwivsovnomjn.supabase.co';      // ex: https://xyzabc.supabase.co
-const SUPABASE_KEY =  'COLE_AQUI_A_CHAVE_COMPLETA'; eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVjcWNlbmt6bndpdnNvdm5vbWpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc1MDMxNzcsImV4cCI6MjA5MzA3OTE3N30.aEvyLilhFeica9_mJ_Y8EGKuYFibuOYEC8UNrdDcye8    // chave anon/public
+const SUPABASE_KEY =  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVjcWNlbmt6bndpdnNvdm5vbWpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc1MDMxNzcsImV4cCI6MjA5MzA3OTE3N30.aEvyLilhFeica9_mJ_Y8EGKuYFibuOYEC8UNrdDcye8';
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -704,13 +704,36 @@ function showLoad(txt){ document.querySelector('.ls-sub').textContent=txt||'Cone
 //  INIT — verifica sessão ao carregar
 // ══════════════════════════════════════════════
 window.addEventListener('load', async function(){
-  showLoad('Verificando sessão...');
   try {
-    var { data:{ session } } = await sb.auth.getSession();
-    if(session){ await initApp(session.user); }
-    else { showAuthScreen(); }
+
+    // segurança pra não travar
+    setTimeout(function(){
+      const loading = document.getElementById('loading-screen');
+      if(loading && loading.style.display !== 'none'){
+        loading.style.display = 'none';
+        document.body.style.overflow = 'auto';
+        showAuthScreen();
+      }
+    }, 4000);
+
+    console.log('Iniciando conexão Supabase...');
+
+    var { data:{ session }, error } = await sb.auth.getSession();
+
+    if(error){
+      console.log(error);
+      showAuthScreen();
+      return;
+    }
+
+    if(session){
+      await initApp(session.user);
+    } else {
+      showAuthScreen();
+    }
+
   } catch(e){
-    showToast('⚠ Erro de conexão. Verifique as credenciais do Supabase.');
+    console.log(e);
     showAuthScreen();
   }
 });
