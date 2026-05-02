@@ -1584,6 +1584,7 @@ function refreshAll(){renderDashboard();renderNotifs();renderClientes();renderFi
 
 // ═══ INIT ═══
 window.onload=async function(){
+  localStorage.clear();
   DB.setClientes([]); //
   refreshAll();
   await carregarClientesDaNuvem();
