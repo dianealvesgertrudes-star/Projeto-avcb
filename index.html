@@ -1584,8 +1584,7 @@ function refreshAll(){renderDashboard();renderNotifs();renderClientes();renderFi
 
 // ═══ INIT ═══
 window.onload=async function(){
-  localStorage.clear();
-  DB.setClientes([]); //
+  
   refreshAll();
   await carregarClientesDaNuvem();
   if(!DB.clientes().length) showToast('👋 Bem-vindo ao AVCBtrack! Cadastre seu primeiro cliente.');
