@@ -1141,20 +1141,43 @@ function renderClientes(){
   empty.style.display='none';
   tbody.innerHTML=cls.map(function(c,i){
     var d=getDaysLeft(c.venc),av=avC(i);
-    return '<tr class="tr">'
+    return '<tr class="tr" data-id="'+c.id+'">'
       +'<td><div class="cfl"><div class="av" style="background:'+av.bg+';color:'+av.cl+'">'+initials(c.nome)+'</div>'
-      +'<div><div class="cn" style="cursor:pointer;text-decoration:underline;text-decoration-color:rgba(255,255,255,.2)" onclick="abrirPerfil(\''+c.id+'\')">'+c.nome+'</div><div class="cs">'+c.tipo+(c.area?' · '+Number(c.area).toLocaleString()+'m²':'')+'</div></div></div></td>'
+      +'<div>'
+      +'<div class="cn open-perfil" data-id="'+c.id+'" style="cursor:pointer;text-decoration:underline;text-decoration-color:rgba(255,255,255,.3)">'+c.nome+'</div>'
+      +'<div class="cs">'+c.tipo+(c.area?' · '+Number(c.area).toLocaleString()+'m²':'')+'</div>'
+      +'</div></div></td>'
       +'<td class="cd">'+(c.resp||'—')+'</td>'
       +'<td class="cd">'+fmtDate(c.venc)+'</td>'
       +'<td>'+daysChip(d)+'</td>'
       +'<td>'+statusBadge(d)+'</td>'
       +'<td><div class="chips">'
-      +'<button class="chip" onclick="abrirPerfil(\''+c.id+'\')">👁 Ver</button>'
-      +'<button class="chip" onclick="editarChecklist(\''+c.id+'\')">📸</button>'
-      +'<button class="chip cf" onclick="deleteCliente(\''+c.id+'\')">🗑</button>'
+      +'<button class="chip open-perfil" data-id="'+c.id+'">👁 Ver</button>'
+      +'<button class="chip open-check" data-id="'+c.id+'">📸</button>'
+      +'<button class="chip cf open-del"  data-id="'+c.id+'">🗑</button>'
       +'</div></td>'
       +'</tr>';
   }).join('');
+
+  // event delegation — zero problema de aspas
+  tbody.querySelectorAll('.open-perfil').forEach(function(el){
+    el.addEventListener('click', function(e){
+      e.stopPropagation();
+      abrirPerfil(this.getAttribute('data-id'));
+    });
+  });
+  tbody.querySelectorAll('.open-check').forEach(function(el){
+    el.addEventListener('click', function(e){
+      e.stopPropagation();
+      editarChecklist(this.getAttribute('data-id'));
+    });
+  });
+  tbody.querySelectorAll('.open-del').forEach(function(el){
+    el.addEventListener('click', function(e){
+      e.stopPropagation();
+      deleteCliente(this.getAttribute('data-id'));
+    });
+  });
 }
 function filterStatus(s){clFilters.status=s;renderClientes()}
 function filterClientes(){clFilters.search=document.getElementById('searchInput').value;renderClientes()}
@@ -1271,9 +1294,12 @@ function renderChecklistSelect(){
   if(!cls.length){btns.innerHTML='';nosel.style.display='flex';return}
   nosel.style.display='none';
   btns.innerHTML=cls.map(function(c,i){
-    var av=avC(i),active=currentClienteId===c.id;
-    return '<button class="btn '+(active?'b-red':'b-ghost')+'" onclick="editarChecklist(\''+c.id+'\')">'+initials(c.nome)+' '+c.nome+'</button>';
+    var active=currentClienteId===c.id;
+    return '<button class="btn '+(active?'b-red':'b-ghost')+' open-check-btn" data-id="'+c.id+'">'+initials(c.nome)+' '+c.nome+'</button>';
   }).join('');
+  btns.querySelectorAll('.open-check-btn').forEach(function(el){
+    el.addEventListener('click',function(){editarChecklist(this.getAttribute('data-id'));});
+  });
 }
 function editarChecklist(id){
   currentClienteId=id;
@@ -1473,7 +1499,9 @@ function abrirPerfil(id){
   }
 
   document.getElementById('perfil-body').innerHTML=html;
-  document.getElementById('perfil-btn-vistoria').setAttribute('onclick','closeModal(\'modal-perfil\');editarChecklist(\''+id+'\')');
+  var btnV=document.getElementById('perfil-btn-vistoria');
+  btnV.dataset.clienteId=id;
+  btnV.onclick=function(){closeModal('modal-perfil');editarChecklist(this.dataset.clienteId);};
   openModal('modal-perfil');
 }
 
