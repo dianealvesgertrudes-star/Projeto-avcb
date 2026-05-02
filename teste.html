@@ -808,7 +808,7 @@ async function logout(){
 async function loadAll(){
   var uid = currentUser.id;
   var [rc, rco, rch] = await Promise.all([
-    sb.from('clientes').select('*').eq('user_id', uid).order('created_at', {ascending:false}),
+    sb.from('clientes').select('*').order('created_at', {ascending:false}),
     sb.from('cobracas').select('*').eq('user_id', uid).order('created_at', {ascending:false}),
     sb.from('checklists').select('*').eq('user_id', uid)
   ]);
