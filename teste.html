@@ -593,10 +593,11 @@ body::before { content:''; position:fixed; inset:0; z-index:0; pointer-events:no
       <div class="field"><label>Endereço</label><input id="c-end" placeholder="Rua, número, bairro, cidade"></div>
       <div class="field"><label>Vencimento do AVCB *</label><input id="c-venc" type="date"></div>
       <div class="field"><label>Observações</label><textarea id="c-obs" placeholder="Notas importantes..."></textarea></div>
-    </div><div class="field">
-  <label>Anexar PDF</label>
-  <input type="file" id="c-pdf" accept=".pdf">
-</div>
+      <div class="field">
+        <label>Anexar PDF</label>
+        <input type="file" id="c-pdf" accept=".pdf">
+      </div>
+    </div>
     <div class="mfoot">
       <button class="btn b-ghost" onclick="closeModal('modal-cliente')">Cancelar</button>
       <button class="btn b-red" onclick="salvarCliente()">Salvar Cliente</button>
@@ -662,7 +663,7 @@ var currentClId    = null;
 var clFilters      = { status:'', search:'' };
 var finFilter      = '';
 var editingClienteId = null;
-const STORAGE_BUCKET = 'documentos';
+const STORAGE_BUCKET = 'DOCUMENTO';
 
 // ══════════════════════════════════════════════
 //  CHECKLIST TEMPLATE
@@ -903,7 +904,7 @@ function populateSelects(){
 // ══════════════════════════════════════════════
 function resetClienteForm(){
   editingClienteId = null;
-  ['c-nome','c-resp','c-tel','c-area','c-andares','c-end','c-venc','c-obs'].forEach(function(f){ 
+  ['c-nome','c-resp','c-tel','c-area','c-andares','c-end','c-venc','c-obs','c-pdf'].forEach(function(f){ 
     var el=document.getElementById(f); if(el) el.value=''; 
   });
   var tipo=document.getElementById('c-tipo'); if(tipo) tipo.value='Condomínio Residencial';
@@ -933,6 +934,10 @@ async function salvarCliente(){
   var nome=document.getElementById('c-nome').value.trim();
   var venc=document.getElementById('c-venc').value;
   if(!nome||!venc){ showToast('⚠ Preencha nome e vencimento!'); return; }
+
+  var pdfInput = document.getElementById('c-pdf');
+  var pdfFile  = pdfInput && pdfInput.files && pdfInput.files[0] ? pdfInput.files[0] : null;
+
   var obj = {
     user_id:  currentUser.id,
     nome: nome,
@@ -946,21 +951,44 @@ async function salvarCliente(){
     observacoes: document.getElementById('c-obs').value.trim()
   };
 
+  var saved;
+
   if(editingClienteId){
     var up = await sb.from('clientes').update(obj).eq('id', editingClienteId).eq('user_id', currentUser.id).select().single();
     if(up.error){ showToast('❌ Erro: '+up.error.message); return; }
-    clientes = clientes.map(function(c){ return c.id===editingClienteId ? up.data : c; });
-    showToast('✅ Cliente atualizado!');
+    saved = up.data;
+    clientes = clientes.map(function(c){ return c.id===editingClienteId ? saved : c; });
   } else {
     var ins = await sb.from('clientes').insert(obj).select().single();
     if(ins.error){ showToast('❌ Erro: '+ins.error.message); return; }
-    clientes.unshift(ins.data);
-    showToast('✅ Cliente salvo!');
+    saved = ins.data;
+    clientes.unshift(saved);
+  }
+
+  if(pdfFile){
+    try{
+      showToast('📎 Enviando PDF...');
+      var uploaded = await uploadToStorage(pdfFile, 'clientes/'+saved.id+'/pdf');
+      var pdfUp = await sb.from('clientes')
+        .update({ pdf_url: uploaded.url })
+        .eq('id', saved.id)
+        .eq('user_id', currentUser.id)
+        .select()
+        .single();
+      if(pdfUp.error){ showToast('⚠ Cliente salvo, mas erro no PDF: '+pdfUp.error.message); }
+      else {
+        saved = pdfUp.data;
+        clientes = clientes.map(function(c){ return c.id===saved.id ? saved : c; });
+      }
+    } catch(e){
+      showToast('⚠ Cliente salvo, mas PDF não subiu: '+(e.message||e));
+    }
   }
 
   resetClienteForm();
   closeModal('modal-cliente');
   refreshAll();
+  showToast(editingClienteId ? '✅ Cliente atualizado!' : '✅ Cliente salvo!');
 }
 
 async function deleteCliente(id){
@@ -998,6 +1026,36 @@ function abrirPDFCliente(id){
   var c = clientes.find(function(x){ return x.id===id; });
   if(c && c.pdf_url) window.open(c.pdf_url, '_blank');
   else showToast('⚠ Este cliente ainda não tem PDF.');
+}
+
+function getStoragePathFromPublicUrl(url){
+  if(!url) return null;
+  var marker = '/object/public/' + STORAGE_BUCKET + '/';
+  var pos = url.indexOf(marker);
+  if(pos === -1) return null;
+  return decodeURIComponent(url.substring(pos + marker.length));
+}
+
+async function excluirPDFCliente(id){
+  var c = clientes.find(function(x){ return x.id===id; });
+  if(!c || !c.pdf_url){ showToast('⚠ Este cliente não tem PDF.'); return; }
+  if(!confirm('Excluir o PDF deste cliente?')) return;
+
+  var path = getStoragePathFromPublicUrl(c.pdf_url);
+  var up = await sb.from('clientes')
+    .update({ pdf_url:null })
+    .eq('id', id)
+    .eq('user_id', currentUser.id)
+    .select()
+    .single();
+  if(up.error){ showToast('❌ Erro ao remover PDF: '+up.error.message); return; }
+
+  if(path){ await sb.storage.from(STORAGE_BUCKET).remove([path]); }
+
+  clientes = clientes.map(function(x){ return x.id===id ? up.data : x; });
+  refreshAll();
+  abrirPerfil(id);
+  showToast('🗑 PDF removido!');
 }
 
 function renderClientes(){
@@ -1085,10 +1143,15 @@ function abrirPerfil(id){
 
   html+='<div style="margin:18px 22px;display:flex;gap:8px;flex-wrap:wrap">'
     +'<button class="btn b-ghost" onclick="editarCliente(\''+c.id+'\');closeModal(\'modal-perfil\')">✏️ Editar cliente</button>'
-    +'<button class="btn b-ghost" onclick="anexarPDFCliente(\''+c.id+'\')">📎 Anexar PDF</button>'
+    +'<button class="btn b-ghost" onclick="anexarPDFCliente(\''+c.id+'\')">📎 '+(c.pdf_url?'Trocar PDF':'Anexar PDF')+'</button>'
     +(c.pdf_url?'<button class="btn b-green" onclick="abrirPDFCliente(\''+c.id+'\')">📄 Abrir PDF</button>':'')
+    +(c.pdf_url?'<button class="btn b-ghost" onclick="excluirPDFCliente(\''+c.id+'\')">🗑 Excluir PDF</button>':'')
     +'</div>';
 
+
+  if(c.pdf_url){
+    html+='<div style="margin:0 22px 14px;padding:10px 12px;background:rgba(31,168,81,.08);border:1px solid rgba(31,168,81,.2);border-radius:5px;font-size:13px;color:var(--green);font-family:var(--f-cond);font-weight:700;letter-spacing:.3px;text-transform:uppercase">📄 PDF anexado ao cliente</div>';
+  }
 
   if(c.observacoes){
     html+='<div style="padding:0 22px 4px;font-family:var(--f-cond);font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-top:14px">Observações</div>'
