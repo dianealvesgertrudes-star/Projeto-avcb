@@ -593,7 +593,10 @@ body::before { content:''; position:fixed; inset:0; z-index:0; pointer-events:no
       <div class="field"><label>Endereço</label><input id="c-end" placeholder="Rua, número, bairro, cidade"></div>
       <div class="field"><label>Vencimento do AVCB *</label><input id="c-venc" type="date"></div>
       <div class="field"><label>Observações</label><textarea id="c-obs" placeholder="Notas importantes..."></textarea></div>
-    </div>
+    </div><div class="field">
+  <label>Anexar PDF</label>
+  <input type="file" id="c-pdf" accept=".pdf">
+</div>
     <div class="mfoot">
       <button class="btn b-ghost" onclick="closeModal('modal-cliente')">Cancelar</button>
       <button class="btn b-red" onclick="salvarCliente()">Salvar Cliente</button>
