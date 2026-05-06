@@ -400,7 +400,7 @@ body::before { content:''; position:fixed; inset:0; z-index:0; pointer-events:no
   <div id="dashboard" class="page on">
     <div class="ph">
       <div><h1>AVCB<em>track</em></h1><p id="dash-date"></p><div class="ph-rule"></div></div>
-      <button class="btn b-red" onclick="openModal('modal-cliente')">＋ Novo Cliente</button>
+      <button class="btn b-red" onclick="novoCliente()">＋ Novo Cliente</button>
     </div>
     <div class="sg">
       <div class="sc sg-g" data-icon="✅"><div class="sl">Em dia</div><div class="sv" id="d-ok">0</div><div class="ss">regulares</div></div>
@@ -416,7 +416,7 @@ body::before { content:''; position:fixed; inset:0; z-index:0; pointer-events:no
   <div id="clientes" class="page">
     <div class="ph">
       <div><h1>Meus <em>Clientes</em></h1><p>Gerencie suas edificações</p><div class="ph-rule"></div></div>
-      <button class="btn b-red" onclick="openModal('modal-cliente')">＋ Novo Cliente</button>
+      <button class="btn b-red" onclick="novoCliente()">＋ Novo Cliente</button>
     </div>
     <div class="card">
       <div class="ch">
@@ -435,7 +435,7 @@ body::before { content:''; position:fixed; inset:0; z-index:0; pointer-events:no
         </table>
         <div id="clientes-empty" class="empty" style="display:none">
           <div class="eico">🏢</div><p>Nenhum cliente cadastrado</p>
-          <button class="btn b-red" style="margin-top:4px" onclick="openModal('modal-cliente')">＋ Cadastrar</button>
+          <button class="btn b-red" style="margin-top:4px" onclick="novoCliente()">＋ Cadastrar</button>
         </div>
       </div>
     </div>
@@ -658,6 +658,8 @@ var currentCat     = 0;
 var currentClId    = null;
 var clFilters      = { status:'', search:'' };
 var finFilter      = '';
+var editingClienteId = null;
+const STORAGE_BUCKET = 'documentos';
 
 // ══════════════════════════════════════════════
 //  CHECKLIST TEMPLATE
@@ -699,6 +701,38 @@ function statusBadge(d){ var s=getStatus(d); return s==='ok'?'<span class="badge
 function daysChip(d){ var s=getStatus(d),c=s==='ok'?'ok':s==='warn'?'wn':'cr'; return d<0?'<span class="dc cr">'+Math.abs(d)+'d vencido</span>':'<span class="dc '+c+'">'+d+' dias</span>'; }
 function showToast(msg){ var t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(function(){t.remove()},3000); }
 function showLoad(txt){ document.querySelector('.ls-sub').textContent=txt||'Conectando...'; }
+
+function safeName(name){
+  return String(name || 'arquivo').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9._-]/g,'_');
+}
+async function uploadToStorage(file, folder){
+  if(!file){ throw new Error('Nenhum arquivo selecionado.'); }
+  var path = currentUser.id + '/' + folder + '/' + Date.now() + '_' + safeName(file.name);
+  var up = await sb.storage.from(STORAGE_BUCKET).upload(path, file, { upsert:false });
+  if(up.error){ throw up.error; }
+  var pub = sb.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+  return { path:path, url:pub.data.publicUrl, name:file.name };
+}
+function pickFile(accept, callback){
+  var input=document.createElement('input');
+  input.type='file';
+  input.accept=accept || '*/*';
+  input.style.display='none';
+  document.body.appendChild(input);
+  input.addEventListener('change', async function(){
+    var file=input.files && input.files[0];
+    input.remove();
+    if(file) await callback(file);
+  });
+  input.click();
+}
+function normalizePhotos(st){
+  if(!st) return [];
+  if(Array.isArray(st.photos)) return st.photos;
+  if(typeof st.photos === 'number') return [];
+  return [];
+}
+
 
 // ══════════════════════════════════════════════
 //  INIT — verifica sessão ao carregar
@@ -808,15 +842,14 @@ async function logout(){
 async function loadAll(){
   var uid = currentUser.id;
   var [rc, rco, rch] = await Promise.all([
-    sb.from('clientes').select('*'),
-    sb.from('cobracas').select('*').eq('user_id', uid).order('created_at', {ascending:false}),
+    sb.from('clientes').select('*').eq('user_id', uid),
+    sb.from('cobracas').select('*').eq('user_id', uid),
     sb.from('checklists').select('*').eq('user_id', uid)
   ]);
   clientes  = rc.data  || [];
   cobracas  = rco.data || [];
-  // checklists indexed by cliente_id
   checklists = {};
-  (rch.data||[]).forEach(function(c){ checklists[c.cliente_id] = c.state; });
+  (rch.data||[]).forEach(function(c){ checklists[c.cliente_id] = c.state || {}; });
 }
 
 // ══════════════════════════════════════════════
@@ -865,13 +898,41 @@ function populateSelects(){
 // ══════════════════════════════════════════════
 //  CLIENTES
 // ══════════════════════════════════════════════
+function resetClienteForm(){
+  editingClienteId = null;
+  ['c-nome','c-resp','c-tel','c-area','c-andares','c-end','c-venc','c-obs'].forEach(function(f){ 
+    var el=document.getElementById(f); if(el) el.value=''; 
+  });
+  var tipo=document.getElementById('c-tipo'); if(tipo) tipo.value='Condomínio Residencial';
+  var h=document.querySelector('#modal-cliente .mhead h3'); if(h) h.textContent='Novo Cliente';
+}
+function novoCliente(){
+  resetClienteForm();
+  openModal('modal-cliente');
+}
+function editarCliente(id){
+  var c = clientes.find(function(x){ return x.id===id; });
+  if(!c){ showToast('⚠ Cliente não encontrado.'); return; }
+  editingClienteId = id;
+  document.getElementById('c-nome').value = c.nome || '';
+  document.getElementById('c-tipo').value = c.tipo || 'Condomínio Residencial';
+  document.getElementById('c-resp').value = c.responsavel || '';
+  document.getElementById('c-tel').value = c.telefone || '';
+  document.getElementById('c-area').value = c.area || '';
+  document.getElementById('c-andares').value = c.andares || '';
+  document.getElementById('c-end').value = c.endereco || '';
+  document.getElementById('c-venc').value = c.vencimento_avcb || '';
+  document.getElementById('c-obs').value = c.observacoes || '';
+  var h=document.querySelector('#modal-cliente .mhead h3'); if(h) h.textContent='Editar Cliente';
+  openModal('modal-cliente');
+}
 async function salvarCliente(){
   var nome=document.getElementById('c-nome').value.trim();
   var venc=document.getElementById('c-venc').value;
   if(!nome||!venc){ showToast('⚠ Preencha nome e vencimento!'); return; }
   var obj = {
     user_id:  currentUser.id,
-    nome,
+    nome: nome,
     tipo:     document.getElementById('c-tipo').value,
     responsavel: document.getElementById('c-resp').value.trim(),
     telefone: document.getElementById('c-tel').value.trim(),
@@ -881,27 +942,64 @@ async function salvarCliente(){
     vencimento_avcb: venc,
     observacoes: document.getElementById('c-obs').value.trim()
   };
-  var { data, error } = await sb.from('clientes').insert(obj).select().single();
-  if(error){ showToast('❌ Erro: '+error.message); return; }
-  clientes.unshift(data);
-  ['c-nome','c-resp','c-tel','c-area','c-andares','c-end','c-venc','c-obs'].forEach(function(f){ document.getElementById(f).value=''; });
+
+  if(editingClienteId){
+    var up = await sb.from('clientes').update(obj).eq('id', editingClienteId).eq('user_id', currentUser.id).select().single();
+    if(up.error){ showToast('❌ Erro: '+up.error.message); return; }
+    clientes = clientes.map(function(c){ return c.id===editingClienteId ? up.data : c; });
+    showToast('✅ Cliente atualizado!');
+  } else {
+    var ins = await sb.from('clientes').insert(obj).select().single();
+    if(ins.error){ showToast('❌ Erro: '+ins.error.message); return; }
+    clientes.unshift(ins.data);
+    showToast('✅ Cliente salvo!');
+  }
+
+  resetClienteForm();
   closeModal('modal-cliente');
-  showToast('✅ Cliente salvo!');
   refreshAll();
 }
 
 async function deleteCliente(id){
   if(!confirm('Remover este cliente?')) return;
-  var { error } = await sb.from('clientes').delete().eq('id', id);
+  var { error } = await sb.from('clientes').delete().eq('id', id).eq('user_id', currentUser.id);
   if(error){ showToast('❌ Erro ao remover.'); return; }
   clientes = clientes.filter(function(c){ return c.id !== id; });
   refreshAll();
   showToast('🗑 Cliente removido');
 }
 
+async function anexarPDFCliente(id){
+  var c = clientes.find(function(x){ return x.id===id; });
+  if(!c){ showToast('⚠ Cliente não encontrado.'); return; }
+  pickFile('application/pdf', async function(file){
+    try{
+      showToast('📎 Enviando PDF...');
+      var uploaded = await uploadToStorage(file, 'clientes/'+id+'/pdf');
+      var { data, error } = await sb.from('clientes')
+        .update({ pdf_url: uploaded.url })
+        .eq('id', id)
+        .eq('user_id', currentUser.id)
+        .select()
+        .single();
+      if(error){ showToast('❌ Erro PDF: '+error.message); return; }
+      clientes = clientes.map(function(x){ return x.id===id ? data : x; });
+      refreshAll();
+      showToast('✅ PDF anexado!');
+    }catch(e){
+      showToast('❌ Erro ao enviar PDF: '+(e.message||e));
+    }
+  });
+}
+function abrirPDFCliente(id){
+  var c = clientes.find(function(x){ return x.id===id; });
+  if(c && c.pdf_url) window.open(c.pdf_url, '_blank');
+  else showToast('⚠ Este cliente ainda não tem PDF.');
+}
+
 function renderClientes(){
   var list = clientes;
-  if(clFilters.search) list=list.filter(function(c){ return c.nome.toLowerCase().indexOf(clFilters.search.toLowerCase())>-1; });
+  if(clFilters.search) list=list.filter(function(c){ return (c.nome||'').toLowerCase().indexOf(clFilters.search.toLowerCase())>-1; });
   if(clFilters.status) list=list.filter(function(c){ return getStatus(getDaysLeft(c.vencimento_avcb))===clFilters.status; });
   var tbody=document.getElementById('clientes-tbody');
   var empty=document.getElementById('clientes-empty');
@@ -910,15 +1008,18 @@ function renderClientes(){
   tbody.innerHTML = list.map(function(c,i){
     var d=getDaysLeft(c.vencimento_avcb), av=avC(i);
     return '<tr class="tr" data-id="'+c.id+'">'
-      +'<td><div class="cfl"><div class="av" style="background:'+av.bg+';color:'+av.cl+'">'+initials(c.nome)+'</div>'
-      +'<div><div class="cn open-perfil" data-id="'+c.id+'" style="cursor:pointer;text-decoration:underline;text-decoration-color:rgba(255,255,255,.3)">'+c.nome+'</div>'
-      +'<div class="cs">'+c.tipo+(c.area?' · '+Number(c.area).toLocaleString()+'m²':'')+'</div></div></div></td>'
+      +'<td><div class="cfl"><div class="av" style="background:'+av.bg+';color:'+av.cl+'">'+initials(c.nome||'?')+'</div>'
+      +'<div><div class="cn open-perfil" data-id="'+c.id+'" style="cursor:pointer;text-decoration:underline;text-decoration-color:rgba(255,255,255,.3)">'+(c.nome||'Sem nome')+'</div>'
+      +'<div class="cs">'+(c.tipo||'—')+(c.area?' · '+Number(c.area).toLocaleString()+'m²':'')+'</div></div></div></td>'
       +'<td class="cd">'+(c.responsavel||'—')+'</td>'
       +'<td class="cd">'+fmtDate(c.vencimento_avcb)+'</td>'
       +'<td>'+daysChip(d)+'</td>'
       +'<td>'+statusBadge(d)+'</td>'
       +'<td><div class="chips">'
       +'<button class="chip open-perfil" data-id="'+c.id+'">👁 Ver</button>'
+      +'<button class="chip edit-cli" data-id="'+c.id+'">✏️ Editar</button>'
+      +'<button class="chip pdf-cli" data-id="'+c.id+'">📎 PDF</button>'
+      +(c.pdf_url?'<button class="chip open-pdf" data-id="'+c.id+'">📄 Abrir</button>':'')
       +'<button class="chip open-check"  data-id="'+c.id+'">📸</button>'
       +'<button class="chip cf open-del" data-id="'+c.id+'">🗑</button>'
       +'</div></td></tr>';
@@ -926,6 +1027,15 @@ function renderClientes(){
 
   tbody.querySelectorAll('.open-perfil').forEach(function(el){
     el.addEventListener('click',function(e){ e.stopPropagation(); abrirPerfil(this.getAttribute('data-id')); });
+  });
+  tbody.querySelectorAll('.edit-cli').forEach(function(el){
+    el.addEventListener('click',function(e){ e.stopPropagation(); editarCliente(this.getAttribute('data-id')); });
+  });
+  tbody.querySelectorAll('.pdf-cli').forEach(function(el){
+    el.addEventListener('click',function(e){ e.stopPropagation(); anexarPDFCliente(this.getAttribute('data-id')); });
+  });
+  tbody.querySelectorAll('.open-pdf').forEach(function(el){
+    el.addEventListener('click',function(e){ e.stopPropagation(); abrirPDFCliente(this.getAttribute('data-id')); });
   });
   tbody.querySelectorAll('.open-check').forEach(function(el){
     el.addEventListener('click',function(e){ e.stopPropagation(); editarChecklist(this.getAttribute('data-id')); });
@@ -968,6 +1078,14 @@ function abrirPerfil(id){
     +'<div class="perfil-item"><div class="perfil-k">Andares</div><div class="perfil-v">'+(c.andares||'—')+'</div></div>'
     +'<div class="perfil-item" style="grid-column:1/-1;border-right:none"><div class="perfil-k">Endereço</div><div class="perfil-v">'+(c.endereco||'—')+'</div></div>'
     +'</div>';
+
+
+  html+='<div style="margin:18px 22px;display:flex;gap:8px;flex-wrap:wrap">'
+    +'<button class="btn b-ghost" onclick="editarCliente(\''+c.id+'\');closeModal(\'modal-perfil\')">✏️ Editar cliente</button>'
+    +'<button class="btn b-ghost" onclick="anexarPDFCliente(\''+c.id+'\')">📎 Anexar PDF</button>'
+    +(c.pdf_url?'<button class="btn b-green" onclick="abrirPDFCliente(\''+c.id+'\')">📄 Abrir PDF</button>':'')
+    +'</div>';
+
 
   if(c.observacoes){
     html+='<div style="padding:0 22px 4px;font-family:var(--f-cond);font-size:10px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-top:14px">Observações</div>'
@@ -1018,14 +1136,14 @@ async function salvarCobranca(){
 }
 
 async function deleteCobranca(id){
-  var { error } = await sb.from('cobracas').delete().eq('id', id);
+  var { error } = await sb.from('cobracas').delete().eq('id', id).eq('user_id', currentUser.id);
   if(error){ showToast('❌ Erro ao remover.'); return; }
   cobracas = cobracas.filter(function(c){ return c.id!==id; });
   refreshAll(); showToast('🗑 Cobrança removida');
 }
 
 async function pagarCobranca(id){
-  var { error } = await sb.from('cobracas').update({ status:'pago' }).eq('id', id);
+  var { error } = await sb.from('cobracas').update({ status:'pago' }).eq('id', id).eq('user_id', currentUser.id);
   if(error){ showToast('❌ Erro.'); return; }
   cobracas.forEach(function(c){ if(c.id===id) c.status='pago'; });
   refreshAll(); showToast('✅ Marcado como pago!');
@@ -1095,14 +1213,14 @@ function exportFinanceiro(){
 // ══════════════════════════════════════════════
 function initState(){
   var st={};
-  TEMPLATE.forEach(function(cat,ci){ cat.items.forEach(function(_,ii){ st[ci+'_'+ii]={status:'pend',note:'',photos:0}; }); });
+  TEMPLATE.forEach(function(cat,ci){ cat.items.forEach(function(_,ii){ st[ci+'_'+ii]={status:'pend',note:'',photos:[]}; }); });
   return st;
 }
 function getState(id){ return checklists[id] ? checklists[id] : initState(); }
 
 async function saveState(id, state){
   checklists[id]=state;
-  var existing = await sb.from('checklists').select('id').eq('cliente_id',id).eq('user_id',currentUser.id).single();
+  var existing = await sb.from('checklists').select('id').eq('cliente_id',id).eq('user_id',currentUser.id).maybeSingle();
   if(existing.data){
     await sb.from('checklists').update({ state }).eq('cliente_id',id).eq('user_id',currentUser.id);
   } else {
@@ -1164,18 +1282,22 @@ function renderItems(state,ci){
   var cat=TEMPLATE[ci];
   document.getElementById('cl-cattitle').textContent=cat.cat+' — '+cat.items.length+' itens';
   document.getElementById('cl-items-list').innerHTML=cat.items.map(function(item,ii){
-    var key=ci+'_'+ii, st=state[key]||{status:'pend',note:'',photos:0};
+    var key=ci+'_'+ii, st=state[key]||{status:'pend',note:'',photos:[]};
+    var photos=normalizePhotos(st);
+    var count=photos.length;
     var cls2=st.status==='ok'?'ok':st.status==='bad'?'bad':'';
     var chk=st.status==='ok'?'✓':st.status==='bad'?'✗':'';
-    var pbtn=st.photos>0
-      ?(st.status==='bad'?'<button class="clipbtn hpbf add-foto" data-key="'+key+'">📷 '+st.photos+' foto(s)</button>':'<button class="clipbtn hpb add-foto" data-key="'+key+'">📷 '+st.photos+' foto(s)</button>')
+    var pbtn=count>0
+      ?(st.status==='bad'?'<button class="clipbtn hpbf add-foto" data-key="'+key+'">📷 '+count+' foto(s)</button>':'<button class="clipbtn hpb add-foto" data-key="'+key+'">📷 '+count+' foto(s)</button>')
       :'<button class="clipbtn add-foto" data-key="'+key+'">📷 Foto</button>';
     var thumbs='';
-    if(st.status!=='pend'){
+    if(st.status!=='pend' || count>0){
       thumbs='<div class="clthumbs">';
-      var bgs=['background:linear-gradient(135deg,#1a3a1a,#0d200d)','background:linear-gradient(135deg,#3a1a1a,#200d0d)','background:linear-gradient(135deg,#1a1a3a,#0d0d20)'];
-      var ems=['🧯','✅','⚠️','📸','🏷️'];
-      for(var p=0;p<st.photos;p++) thumbs+='<div class="thumb" style="'+bgs[p%3]+'">'+ems[p%5]+'</div>';
+      if(count){
+        photos.forEach(function(ph,idx){
+          thumbs+='<a class="thumb" href="'+ph.url+'" target="_blank" title="'+(ph.name||'foto')+'" style="background-image:url(\''+ph.url+'\');background-size:cover;background-position:center"></a>';
+        });
+      }
       thumbs+='<button class="tadd add-foto" data-key="'+key+'">＋</button></div>';
     }
     var note=(st.status==='bad'&&st.note)?'<div class="clnote">⚠ '+st.note+'</div>'
@@ -1188,7 +1310,6 @@ function renderItems(state,ci){
       +pbtn+'</div>'+thumbs+note+acts+'</div>';
   }).join('');
 
-  // bind events
   document.getElementById('cl-items-list').querySelectorAll('.mark-ok').forEach(function(el){ el.addEventListener('click',function(){ markItem(this.getAttribute('data-key'),'ok'); }); });
   document.getElementById('cl-items-list').querySelectorAll('.mark-bad').forEach(function(el){ el.addEventListener('click',function(){ markItem(this.getAttribute('data-key'),'bad'); }); });
   document.getElementById('cl-items-list').querySelectorAll('.undo-item').forEach(function(el){ el.addEventListener('click',function(){ markItem(this.getAttribute('data-key'),'pend'); }); });
@@ -1198,18 +1319,31 @@ function renderItems(state,ci){
 
 async function markItem(key,status){
   var state=getState(currentClId);
-  if(!state[key]) state[key]={status:'pend',note:'',photos:0};
+  if(!state[key]) state[key]={status:'pend',note:'',photos:[]};
   state[key].status=status;
-  if(status!=='pend'&&!state[key].photos) state[key].photos=1;
+  if(!Array.isArray(state[key].photos)) state[key].photos=[];
   await saveState(currentClId,state);
   renderItems(state,currentCat); renderCats(state); updateProgress(state);
 }
 async function addFoto(key){
-  var state=getState(currentClId);
-  if(!state[key]) state[key]={status:'pend',note:'',photos:0};
-  state[key].photos=(state[key].photos||0)+1;
-  await saveState(currentClId,state);
-  renderItems(state,currentCat); showToast('📸 Foto adicionada!');
+  if(!currentClId){ showToast('⚠ Abra uma vistoria primeiro.'); return; }
+  pickFile('image/*', async function(file){
+    try{
+      showToast('📸 Enviando foto...');
+      var uploaded = await uploadToStorage(file, 'checklists/'+currentClId+'/'+key);
+      var state=getState(currentClId);
+      if(!state[key]) state[key]={status:'pend',note:'',photos:[]};
+      if(!Array.isArray(state[key].photos)) state[key].photos=[];
+      state[key].photos.push({ url:uploaded.url, path:uploaded.path, name:uploaded.name, uploaded_at:new Date().toISOString() });
+      await saveState(currentClId,state);
+      renderItems(state,currentCat);
+      renderCats(state);
+      updateProgress(state);
+      showToast('✅ Foto enviada!');
+    }catch(e){
+      showToast('❌ Erro ao enviar foto: '+(e.message||e));
+    }
+  });
 }
 async function editNote(key){
   var txt=prompt('Descreva a não conformidade:'); if(txt===null) return;
@@ -1232,7 +1366,7 @@ function updateProgress(state){
   document.getElementById('cl-cnt-ok').textContent='✔ '+ok+' ok';
   document.getElementById('cl-cnt-bad').textContent='✗ '+bad+' reprov.';
   document.getElementById('cl-cnt-pend').textContent=pend+' pend.';
-  var fotos=0; Object.values(state).forEach(function(s){ fotos+=(s.photos||0); });
+  var fotos=0; Object.values(state).forEach(function(s){ fotos += normalizePhotos(s).length; });
   document.getElementById('cl-bot-info').textContent=done+' de '+total+' itens · '+fotos+' foto(s) · '+bad+' não conf.';
 }
 
@@ -1266,7 +1400,22 @@ function renderDashboard(){
   document.getElementById('d-crit').textContent=crit;
   document.getElementById('d-total').textContent=clientes.length;
 
-  var alerts=clientes.map(function(c){ return {c,days:getDaysLeft(c.vencimento_avcb)}; }).filter(function(x){ return x.days<30; }).sort(function(a,b){ return a.days-b.days; });
+  function bindCard(id,status,msg){
+    var card=document.getElementById(id).closest('.sc');
+    if(!card) return;
+    card.style.cursor='pointer';
+    card.onclick=function(){
+      filterStatus(status);
+      goTab('clientes',document.querySelectorAll('.tb')[1]);
+      showToast(msg);
+    };
+  }
+  bindCard('d-ok','ok','✅ Mostrando clientes em dia');
+  bindCard('d-warn','warn','⚠ Mostrando clientes em atenção');
+  bindCard('d-crit','crit','🚨 Mostrando clientes críticos');
+  bindCard('d-total','','🏢 Mostrando todos os clientes');
+
+  var alerts=clientes.map(function(c){ return {c:c,days:getDaysLeft(c.vencimento_avcb)}; }).filter(function(x){ return x.days<30; }).sort(function(a,b){ return a.days-b.days; });
   var el=document.getElementById('dash-alerts');
   if(!alerts.length){ el.innerHTML='<div class="empty"><div class="eico">✅</div><p>Todos os clientes estão em dia</p></div>'; return; }
   el.innerHTML='<div>'+alerts.map(function(a,i){
