@@ -332,6 +332,47 @@ body::before { content:''; position:fixed; inset:0; z-index:0; pointer-events:no
 }
 ::-webkit-scrollbar { width:4px; }
 ::-webkit-scrollbar-thumb { background:var(--raised); border-radius:2px; }
+
+
+/* ── ORÇAMENTOS ── */
+.orc-card { padding:14px 18px; display:flex; align-items:center; justify-content:space-between; gap:12px; border-bottom:1px solid rgba(255,255,255,.05); }
+.orc-card:hover { background:rgba(204,27,27,.04); }
+.orc-title { font-family:var(--f-cond); font-size:15px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; }
+.orc-sub { font-size:12px; color:var(--muted); margin-top:3px; font-style:italic; }
+.orc-actions { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+
+/* ── MOBILE MAIS USÁVEL ── */
+@media(max-width:700px){
+  .topbar { height:auto; min-height:56px; padding:8px; overflow-x:auto; gap:6px; }
+  .tb { padding:8px 10px; font-size:12px; flex-shrink:0; }
+  .tb-right { display:none; }
+  .page { padding:16px 12px 80px; }
+  .ph { align-items:stretch; }
+  .ph h1 { font-size:28px; }
+  .ph .btn, .ph .btn-row, .btn-row .btn { width:100%; justify-content:center; }
+  .sg { grid-template-columns:1fr 1fr; gap:10px; }
+  .sc { padding:14px 12px; }
+  .sv { font-size:34px; }
+  .ch { padding:12px; align-items:flex-start; gap:8px; flex-direction:column; }
+  .chips { width:100%; overflow-x:auto; flex-wrap:nowrap; }
+  .chip { flex-shrink:0; }
+  .mfrow { grid-template-columns:1fr; }
+  .modal { max-width:96vw; }
+  .mbody { padding:16px; }
+  .mfoot { flex-direction:column; padding:12px 16px; }
+  .mfoot .btn { width:100%; justify-content:center; }
+  .tbl, .tbl thead, .tbl tbody, .tbl tr, .tbl td { display:block; width:100%; }
+  .tbl thead { display:none; }
+  .tbl .tr { border-bottom:1px solid var(--line); padding:10px 0; }
+  .tbl td { padding:8px 12px; border-bottom:0 !important; }
+  .botbar { height:auto; flex-direction:column; align-items:stretch; gap:10px; padding:10px 12px; }
+  .botbar .btn-row .btn { width:auto; flex:1; }
+  .perfil-grid { grid-template-columns:1fr; }
+  .perfil-item:nth-child(odd) { border-right:none; }
+  .orc-card { flex-direction:column; align-items:stretch; }
+  .orc-actions .btn { flex:1; justify-content:center; }
+}
+
 </style>
 </head>
 <body>
@@ -379,6 +420,7 @@ body::before { content:''; position:fixed; inset:0; z-index:0; pointer-events:no
   <button class="nb on" onclick="goPage('dashboard',this)" title="Dashboard">🏠</button>
   <button class="nb"    onclick="goPage('clientes',this)"  title="Clientes">🏢</button>
   <button class="nb"    onclick="goPage('financeiro',this)" title="Financeiro">💰</button>
+  <button class="nb"    onclick="goPage('orcamentos',this)" title="Orçamentos">🧾</button>
   <button class="nb"    onclick="goPage('checklist',this)"  title="Checklist">📸</button>
   <button class="nb nb-logout" style="margin-top:auto" onclick="logout()" title="Sair">🚪</button>
 </nav>
@@ -389,6 +431,7 @@ body::before { content:''; position:fixed; inset:0; z-index:0; pointer-events:no
     <button class="tb on" onclick="goTab('dashboard',this)">🏠 Dashboard</button>
     <button class="tb"    onclick="goTab('clientes',this)">🏢 Clientes</button>
     <button class="tb"    onclick="goTab('financeiro',this)">💰 Financeiro</button>
+    <button class="tb"    onclick="goTab('orcamentos',this)">🧾 Orçamentos</button>
     <button class="tb"    onclick="goTab('checklist',this)">📸 Checklist</button>
     <div class="tb-right">
       <input class="search" placeholder="🔍  Buscar..." id="searchInput" oninput="filterClientes()">
@@ -505,6 +548,24 @@ body::before { content:''; position:fixed; inset:0; z-index:0; pointer-events:no
             <button class="qab qaf" onclick="destacarVencidos()">⚠ Ver inadimplentes</button>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+
+
+  <!-- ORÇAMENTOS -->
+  <div id="orcamentos" class="page">
+    <div class="ph">
+      <div><h1>Orça<em>mentos</em></h1><p>PDFs de orçamento prontos para enviar no WhatsApp</p><div class="ph-rule"></div></div>
+      <button class="btn b-red" onclick="openModal('modal-orcamento')">＋ Novo Orçamento</button>
+    </div>
+    <div class="card">
+      <div class="ch"><h2>Orçamentos cadastrados</h2></div>
+      <div id="orc-list"></div>
+      <div id="orc-empty" class="empty" style="display:none">
+        <div class="eico">🧾</div><p>Nenhum orçamento cadastrado</p>
+        <button class="btn b-red" style="margin-top:4px" onclick="openModal('modal-orcamento')">＋ Cadastrar orçamento</button>
       </div>
     </div>
   </div>
@@ -627,6 +688,25 @@ body::before { content:''; position:fixed; inset:0; z-index:0; pointer-events:no
   </div>
 </div>
 
+
+
+<!-- MODAL ORÇAMENTO -->
+<div class="overlay" id="modal-orcamento" onclick="closeModalBg(event,'modal-orcamento')">
+  <div class="modal">
+    <div class="mhead"><h3>Novo Orçamento</h3><button class="mclose" onclick="closeModal('modal-orcamento')">✕</button></div>
+    <div class="mbody">
+      <div class="field"><label>Cliente *</label><select id="o-cliente"><option value="">Selecione...</option></select></div>
+      <div class="field"><label>Descrição do orçamento *</label><input id="o-desc" placeholder="Ex: Renovação AVCB, instalação, adequação..."></div>
+      <div class="field"><label>Valor estimado (R$)</label><input id="o-valor" type="number" placeholder="0,00"></div>
+      <div class="field"><label>PDF do orçamento *</label><input id="o-pdf" type="file" accept="application/pdf,.pdf"></div>
+    </div>
+    <div class="mfoot">
+      <button class="btn b-ghost" onclick="closeModal('modal-orcamento')">Cancelar</button>
+      <button class="btn b-red" onclick="salvarOrcamento()">Salvar Orçamento</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL CHECKLIST -->
 <div class="overlay" id="modal-checklist" onclick="closeModalBg(event,'modal-checklist')">
   <div class="modal">
@@ -657,6 +737,7 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 var currentUser    = null;
 var clientes       = [];
 var cobracas       = [];
+var orcamentos     = [];
 var checklists     = {};
 var currentCat     = 0;
 var currentClId    = null;
@@ -665,29 +746,89 @@ var finFilter      = '';
 var editingClienteId = null;
 const STORAGE_BUCKET = 'DOCUMENTO';
 
+
+
+// ══════════════════════════════════════════════
+//  ORÇAMENTOS
+// ══════════════════════════════════════════════
+async function salvarOrcamento(){
+  var cid = document.getElementById('o-cliente').value;
+  var desc = document.getElementById('o-desc').value.trim();
+  var valor = parseFloat(document.getElementById('o-valor').value || '0');
+  var pdfInput = document.getElementById('o-pdf');
+  var pdfFile = pdfInput && pdfInput.files && pdfInput.files[0] ? pdfInput.files[0] : null;
+  if(!cid || !desc || !pdfFile){ showToast('⚠ Selecione cliente, descrição e PDF.'); return; }
+  var cl = clientes.find(function(c){ return c.id===cid; });
+  try{
+    showToast('📎 Enviando PDF do orçamento...');
+    var uploaded = await uploadToStorage(pdfFile, 'orcamentos/'+cid);
+    var obj = {
+      user_id: currentUser.id,
+      cliente_id: cid,
+      descricao: desc,
+      valor: valor || null,
+      pdf_url: uploaded.url
+    };
+    var { data, error } = await sb.from('orcamentos').insert(obj).select().single();
+    if(error){ showToast('❌ Erro: '+error.message); return; }
+    orcamentos.unshift(data);
+    ['o-cliente','o-desc','o-valor','o-pdf'].forEach(function(f){ var el=document.getElementById(f); if(el) el.value=''; });
+    closeModal('modal-orcamento');
+    refreshAll();
+    showToast('✅ Orçamento salvo!');
+  }catch(e){
+    showToast('❌ Erro no PDF: '+(e.message||e));
+  }
+}
+
+function renderOrcamentos(){
+  var list=document.getElementById('orc-list'), empty=document.getElementById('orc-empty');
+  if(!list || !empty) return;
+  if(!orcamentos.length){ list.innerHTML=''; empty.style.display='flex'; return; }
+  empty.style.display='none';
+  list.innerHTML=orcamentos.map(function(o){
+    var cl=clientes.find(function(c){ return c.id===o.cliente_id; }) || {};
+    var tel=(cl.telefone||'').replace(/\D/g,'');
+    var msg='Olá, '+(cl.responsavel||cl.nome||'')+'! Segue o orçamento: '+(o.descricao||'')+(o.valor?' no valor de '+fmtMoney(o.valor):'')+'. PDF: '+(o.pdf_url||'');
+    var wa=tel ? 'https://wa.me/55'+tel+'?text='+encodeURIComponent(msg) : '';
+    return '<div class="orc-card">'
+      +'<div><div class="orc-title">'+(cl.nome||'Cliente')+'</div>'
+      +'<div class="orc-sub">'+(o.descricao||'Orçamento')+' · '+(o.valor?fmtMoney(o.valor):'sem valor')+'</div></div>'
+      +'<div class="orc-actions">'
+      +(o.pdf_url?'<a class="btn b-ghost" href="'+o.pdf_url+'" target="_blank">📄 Abrir PDF</a>':'')
+      +(wa?'<a class="btn b-green" href="'+wa+'" target="_blank">📲 WhatsApp</a>':'<button class="btn b-ghost" onclick="showToast(\'⚠ Cliente sem telefone\')">📲 WhatsApp</button>')
+      +'<button class="btn b-ghost" onclick="excluirOrcamento(\''+o.id+'\')">🗑 Excluir</button>'
+      +'</div></div>';
+  }).join('');
+}
+
+async function excluirOrcamento(id){
+  if(!confirm('Excluir este orçamento?')) return;
+  var { error } = await sb.from('orcamentos').delete().eq('id', id).eq('user_id', currentUser.id);
+  if(error){ showToast('❌ Erro: '+error.message); return; }
+  orcamentos = orcamentos.filter(function(o){ return o.id!==id; });
+  refreshAll();
+  showToast('🗑 Orçamento excluído');
+}
+
 // ══════════════════════════════════════════════
 //  CHECKLIST TEMPLATE
 // ══════════════════════════════════════════════
 var TEMPLATE = [
-  {cat:'🧯 Extintores', items:[
-    {name:'Extintor CO₂ — Recepção / Térreo',    desc:'Validade, lacre, carga e sinalização'},
-    {name:'Extintor PQS — Corredores',            desc:'Validade, lacre, carga e sinalização'},
-    {name:'Extintor Água — Andar Superior',        desc:'Validade, lacre, carga e sinalização'},
-    {name:'Extintor Subsolo / Garagem',            desc:'Validade, lacre, carga e sinalização'}
+  {cat:'🧯 Extintor', items:[
+    {name:'Extintor', desc:'Validade, lacre, carga, acesso e sinalização'}
   ]},
   {cat:'🚪 Saídas de Emergência', items:[
-    {name:'Porta corta-fogo Térreo',              desc:'Estado, fechamento automático, sinalização'},
-    {name:'Escada de emergência desobstruída',     desc:'Largura, piso antiderrapante e iluminação'},
-    {name:'Saída de emergência sinalizada',        desc:'Placa luminosa e rota visível'}
+    {name:'Porta corta-fogo / saída de emergência', desc:'Estado, fechamento, desobstrução e sinalização'},
+    {name:'Escada / rota de fuga desobstruída', desc:'Largura, piso, acesso livre e iluminação'}
   ]},
   {cat:'💡 Iluminação de Emergência', items:[
-    {name:'Bloco autônomo — corredores',           desc:'Funcionamento e carga da bateria'},
-    {name:'Iluminação escada — todos os andares',  desc:'Todas as luminárias funcionando'},
-    {name:'Sinalização fotoluminescente',          desc:'Placas em bom estado e visíveis'}
+    {name:'Iluminação de emergência', desc:'Funcionamento, autonomia e pontos principais'},
+    {name:'Sinalização de emergência', desc:'Placas visíveis e em bom estado'}
   ]},
   {cat:'🚿 Hidrantes', items:[
-    {name:'Hidrante de parede — mangueira',        desc:'Estado da mangueira e esguicho'},
-    {name:'Pressão do sistema hidráulico',          desc:'Pressão mínima de 10 mca'}
+    {name:'Hidrante / mangueira / esguicho', desc:'Condição geral e acesso'},
+    {name:'Pressão do sistema hidráulico', desc:'Pressão e funcionamento do sistema'}
   ]}
 ];
 
@@ -833,7 +974,7 @@ async function register(){
 
 async function logout(){
   await sb.auth.signOut();
-  currentUser=null; clientes=[]; cobracas=[]; checklists={};
+  currentUser=null; clientes=[]; cobracas=[]; orcamentos=[]; checklists={};
   document.getElementById('app-sidebar').style.display='none';
   document.getElementById('app-main').style.display='none';
   showAuthScreen();
@@ -845,13 +986,15 @@ async function logout(){
 // ══════════════════════════════════════════════
 async function loadAll(){
   var uid = currentUser.id;
-  var [rc, rco, rch] = await Promise.all([
+  var [rc, rco, ro, rch] = await Promise.all([
     sb.from('clientes').select('*').eq('user_id', uid),
     sb.from('cobracas').select('*').eq('user_id', uid),
+    sb.from('orcamentos').select('*').eq('user_id', uid),
     sb.from('checklists').select('*').eq('user_id', uid)
   ]);
   clientes  = rc.data  || [];
   cobracas  = rco.data || [];
+  orcamentos = ro.data || [];
   checklists = {};
   (rch.data||[]).forEach(function(c){ checklists[c.cliente_id] = c.state || {}; });
 }
@@ -886,13 +1029,13 @@ function syncTabHighlight(id){
 //  MODALS
 // ══════════════════════════════════════════════
 function openModal(id){
-  if(id==='modal-cobranca'||id==='modal-checklist') populateSelects();
+  if(id==='modal-cobranca'||id==='modal-checklist'||id==='modal-orcamento') populateSelects();
   document.getElementById(id).classList.add('on');
 }
 function closeModal(id){ document.getElementById(id).classList.remove('on'); }
 function closeModalBg(e,id){ if(e.target.classList.contains('overlay')) closeModal(id); }
 function populateSelects(){
-  ['f-cliente','cl-sel-cliente'].forEach(function(sel){
+  ['f-cliente','cl-sel-cliente','o-cliente'].forEach(function(sel){
     var el=document.getElementById(sel); if(!el) return;
     el.innerHTML='<option value="">Selecione o cliente...</option>';
     clientes.forEach(function(c){ var o=document.createElement('option'); o.value=c.id; o.textContent=c.nome; el.appendChild(o); });
@@ -1274,6 +1417,8 @@ function exportFinanceiro(){
   a.download='avcbtrack-financeiro.csv'; a.click();
 }
 
+
+
 // ══════════════════════════════════════════════
 //  CHECKLIST
 // ══════════════════════════════════════════════
@@ -1440,7 +1585,7 @@ function iniciarVistoria(){
   var id=document.getElementById('cl-sel-cliente').value;
   if(!id){ showToast('⚠ Selecione um cliente!'); return; }
   closeModal('modal-checklist');
-  goTab('checklist',document.querySelectorAll('.tb')[3]);
+  goTab('checklist',document.querySelectorAll('.tb')[4]);
   editarChecklist(id);
 }
 function salvarChecklist(){ showToast('💾 Salvo automaticamente no Supabase!'); }
@@ -1495,7 +1640,7 @@ function renderDashboard(){
       +'</div>';
   }).join('')+'</div>';
   el.querySelectorAll('.btn').forEach(function(btn){
-    btn.addEventListener('click',function(){ editarChecklist(this.getAttribute('data-id')); goTab('checklist',document.querySelectorAll('.tb')[3]); });
+    btn.addEventListener('click',function(){ editarChecklist(this.getAttribute('data-id')); goTab('checklist',document.querySelectorAll('.tb')[4]); });
   });
 }
 
@@ -1520,6 +1665,7 @@ function refreshAll(){
   renderNotifs();
   renderClientes();
   renderFinanceiro();
+  renderOrcamentos();
   renderChecklistSelect();
 }
 </script>
