@@ -554,17 +554,30 @@ body::before { content:''; position:fixed; inset:0; z-index:0; pointer-events:no
 
 
 
-  <!-- ORÇAMENTOS -->
+  <!-- ORÇAMENTOS / MODELOS PDF -->
   <div id="orcamentos" class="page">
     <div class="ph">
-      <div><h1>Orça<em>mentos</em></h1><p>PDFs de orçamento prontos para enviar no WhatsApp</p><div class="ph-rule"></div></div>
-      <button class="btn b-red" onclick="openModal('modal-orcamento')">＋ Novo Orçamento</button>
+      <div><h1>Orça<em>mentos</em></h1><p>Biblioteca de PDFs prontos para enviar no WhatsApp</p><div class="ph-rule"></div></div>
+      <div class="btn-row">
+        <button class="btn b-red" onclick="openModal('modal-modelo-orcamento')">＋ Subir Modelo PDF</button>
+        <button class="btn b-ghost" onclick="openModal('modal-orcamento')">＋ Orçamento por Cliente</button>
+      </div>
     </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <div class="ch"><h2>📂 Modelos de orçamento</h2><span style="font-size:12px;color:var(--muted);font-style:italic">PDFs prontos para reutilizar</span></div>
+      <div id="modelos-list"></div>
+      <div id="modelos-empty" class="empty" style="display:none">
+        <div class="eico">📂</div><p>Nenhum modelo PDF cadastrado</p>
+        <button class="btn b-red" style="margin-top:4px" onclick="openModal('modal-modelo-orcamento')">＋ Subir modelo</button>
+      </div>
+    </div>
+
     <div class="card">
-      <div class="ch"><h2>Orçamentos cadastrados</h2></div>
+      <div class="ch"><h2>🧾 Histórico de orçamentos por cliente</h2></div>
       <div id="orc-list"></div>
       <div id="orc-empty" class="empty" style="display:none">
-        <div class="eico">🧾</div><p>Nenhum orçamento cadastrado</p>
+        <div class="eico">🧾</div><p>Nenhum orçamento por cliente cadastrado</p>
         <button class="btn b-red" style="margin-top:4px" onclick="openModal('modal-orcamento')">＋ Cadastrar orçamento</button>
       </div>
     </div>
@@ -690,6 +703,37 @@ body::before { content:''; position:fixed; inset:0; z-index:0; pointer-events:no
 
 
 
+<!-- MODAL MODELO ORÇAMENTO -->
+<div class="overlay" id="modal-modelo-orcamento" onclick="closeModalBg(event,'modal-modelo-orcamento')">
+  <div class="modal">
+    <div class="mhead"><h3>Novo Modelo PDF</h3><button class="mclose" onclick="closeModal('modal-modelo-orcamento')">✕</button></div>
+    <div class="mbody">
+      <div class="field"><label>Nome do modelo *</label><input id="m-nome" placeholder="Ex: Orçamento Renovação AVCB"></div>
+      <div class="field"><label>PDF do modelo *</label><input id="m-pdf" type="file" accept="application/pdf,.pdf"></div>
+    </div>
+    <div class="mfoot">
+      <button class="btn b-ghost" onclick="closeModal('modal-modelo-orcamento')">Cancelar</button>
+      <button class="btn b-red" onclick="salvarModeloOrcamento()">Salvar Modelo</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ENVIAR MODELO -->
+<div class="overlay" id="modal-enviar-modelo" onclick="closeModalBg(event,'modal-enviar-modelo')">
+  <div class="modal">
+    <div class="mhead"><h3>Enviar Modelo pelo WhatsApp</h3><button class="mclose" onclick="closeModal('modal-enviar-modelo')">✕</button></div>
+    <div class="mbody">
+      <div class="field"><label>Modelo selecionado</label><input id="em-modelo" disabled></div>
+      <div class="field"><label>Cliente *</label><select id="modelo-cliente"><option value="">Selecione...</option></select></div>
+      <div class="field"><label>Mensagem</label><textarea id="modelo-msg" placeholder="Olá, segue o orçamento em PDF."></textarea></div>
+    </div>
+    <div class="mfoot">
+      <button class="btn b-ghost" onclick="closeModal('modal-enviar-modelo')">Cancelar</button>
+      <button class="btn b-green" onclick="confirmarEnvioModeloWhatsApp()">📲 Enviar WhatsApp</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL ORÇAMENTO -->
 <div class="overlay" id="modal-orcamento" onclick="closeModalBg(event,'modal-orcamento')">
   <div class="modal">
@@ -747,6 +791,8 @@ var currentUser    = null;
 var clientes       = [];
 var cobracas       = [];
 var orcamentos     = [];
+var modelosOrcamento = [];
+var modeloSelecionado = null;
 var checklists     = {};
 var currentCat     = 0;
 var currentClId    = null;
@@ -756,6 +802,80 @@ var editingClienteId = null;
 const STORAGE_BUCKET = 'DOCUMENTO';
 
 
+
+// ══════════════════════════════════════════════
+//  MODELOS DE ORÇAMENTO PDF
+// ══════════════════════════════════════════════
+async function salvarModeloOrcamento(){
+  var nome = document.getElementById('m-nome').value.trim();
+  var pdfInput = document.getElementById('m-pdf');
+  var pdfFile = pdfInput && pdfInput.files && pdfInput.files[0] ? pdfInput.files[0] : null;
+  if(!nome || !pdfFile){ showToast('⚠ Informe nome e PDF do modelo.'); return; }
+  try{
+    showToast('📎 Enviando modelo PDF...');
+    var uploaded = await uploadToStorage(pdfFile, 'modelos_orcamento');
+    var obj = { user_id: currentUser.id, nome: nome, pdf_url: uploaded.url };
+    var { data, error } = await sb.from('modelos_orcamento').insert(obj).select().single();
+    if(error){ showToast('❌ Erro: '+error.message); return; }
+    modelosOrcamento.unshift(data);
+    document.getElementById('m-nome').value='';
+    document.getElementById('m-pdf').value='';
+    closeModal('modal-modelo-orcamento');
+    refreshAll();
+    showToast('✅ Modelo salvo!');
+  }catch(e){
+    showToast('❌ Erro no PDF: '+(e.message||e));
+  }
+}
+
+function renderModelosOrcamento(){
+  var list=document.getElementById('modelos-list'), empty=document.getElementById('modelos-empty');
+  if(!list || !empty) return;
+  if(!modelosOrcamento.length){ list.innerHTML=''; empty.style.display='flex'; return; }
+  empty.style.display='none';
+  list.innerHTML=modelosOrcamento.map(function(m){
+    return '<div class="orc-card">'
+      +'<div><div class="orc-title">📄 '+(m.nome||'Modelo de orçamento')+'</div>'
+      +'<div class="orc-sub">Modelo PDF pronto para enviar · '+(m.created_at?new Date(m.created_at).toLocaleDateString('pt-BR'):'')+'</div></div>'
+      +'<div class="orc-actions">'
+      +(m.pdf_url?'<a class="btn b-ghost" href="'+m.pdf_url+'" target="_blank">📄 Abrir PDF</a>':'')
+      +'<button class="btn b-green" onclick="abrirEnvioModelo(\''+m.id+'\')">📲 Enviar</button>'
+      +'<button class="btn b-ghost" onclick="excluirModeloOrcamento(\''+m.id+'\')">🗑 Excluir</button>'
+      +'</div></div>';
+  }).join('');
+}
+
+function abrirEnvioModelo(id){
+  var m = modelosOrcamento.find(function(x){ return x.id===id; });
+  if(!m){ showToast('⚠ Modelo não encontrado.'); return; }
+  modeloSelecionado = m;
+  populateSelects();
+  document.getElementById('em-modelo').value = m.nome || 'Modelo de orçamento';
+  document.getElementById('modelo-cliente').value = '';
+  document.getElementById('modelo-msg').value = 'Olá, segue o orçamento em PDF: '+(m.nome||'Orçamento')+'\n'+(m.pdf_url||'');
+  openModal('modal-enviar-modelo');
+}
+
+function confirmarEnvioModeloWhatsApp(){
+  if(!modeloSelecionado){ showToast('⚠ Selecione um modelo.'); return; }
+  var cid = document.getElementById('modelo-cliente').value;
+  var cl = clientes.find(function(c){ return c.id===cid; });
+  if(!cl){ showToast('⚠ Selecione um cliente.'); return; }
+  var tel = (cl.telefone||'').replace(/\D/g,'');
+  if(!tel){ showToast('⚠ Cliente sem telefone/WhatsApp.'); return; }
+  var msg = document.getElementById('modelo-msg').value.trim();
+  if(!msg){ msg = 'Olá, segue o orçamento em PDF: '+(modeloSelecionado.pdf_url||''); }
+  window.open('https://wa.me/55'+tel+'?text='+encodeURIComponent(msg), '_blank');
+}
+
+async function excluirModeloOrcamento(id){
+  if(!confirm('Excluir este modelo de orçamento?')) return;
+  var { error } = await sb.from('modelos_orcamento').delete().eq('id', id).eq('user_id', currentUser.id);
+  if(error){ showToast('❌ Erro: '+error.message); return; }
+  modelosOrcamento = modelosOrcamento.filter(function(m){ return m.id!==id; });
+  refreshAll();
+  showToast('🗑 Modelo excluído');
+}
 
 // ══════════════════════════════════════════════
 //  ORÇAMENTOS
@@ -803,7 +923,7 @@ function renderOrcamentos(){
     var wa=tel ? 'https://wa.me/55'+tel+'?text='+encodeURIComponent(msg) : '';
     return '<div class="orc-card">'
       +'<div><div class="orc-title">'+(cl.nome||'Cliente')+'</div>'
-      +'<div class="orc-sub">'+(o.descricao||'Orçamento')+' · '+(o.valor?fmtMoney(o.valor):'sem valor')+'</div></div>'
+      +'<div class="orc-sub">'+(o.tipo_orcamento?o.tipo_orcamento+' · ':'')+(o.descricao||'Orçamento')+' · '+(o.valor?fmtMoney(o.valor):'sem valor')+'</div></div>'
       +'<div class="orc-actions">'
       +(o.pdf_url?'<a class="btn b-ghost" href="'+o.pdf_url+'" target="_blank">📄 Abrir PDF</a>':'')
       +(wa?'<a class="btn b-green" href="'+wa+'" target="_blank">📲 WhatsApp</a>':'<button class="btn b-ghost" onclick="showToast(\'⚠ Cliente sem telefone\')">📲 WhatsApp</button>')
@@ -996,15 +1116,17 @@ async function logout(){
 // ══════════════════════════════════════════════
 async function loadAll(){
   var uid = currentUser.id;
-  var [rc, rco, ro, rch] = await Promise.all([
+  var [rc, rco, ro, rm, rch] = await Promise.all([
     sb.from('clientes').select('*').eq('user_id', uid),
     sb.from('cobracas').select('*').eq('user_id', uid),
     sb.from('orcamentos').select('*').eq('user_id', uid),
+    sb.from('modelos_orcamento').select('*').eq('user_id', uid),
     sb.from('checklists').select('*').eq('user_id', uid)
   ]);
   clientes  = rc.data  || [];
   cobracas  = rco.data || [];
   orcamentos = ro.data || [];
+  modelosOrcamento = rm.data || [];
   checklists = {};
   (rch.data||[]).forEach(function(c){ checklists[c.cliente_id] = c.state || {}; });
 }
@@ -1039,13 +1161,13 @@ function syncTabHighlight(id){
 //  MODALS
 // ══════════════════════════════════════════════
 function openModal(id){
-  if(id==='modal-cobranca'||id==='modal-checklist'||id==='modal-orcamento') populateSelects();
+  if(id==='modal-cobranca'||id==='modal-checklist'||id==='modal-orcamento'||id==='modal-enviar-modelo') populateSelects();
   document.getElementById(id).classList.add('on');
 }
 function closeModal(id){ document.getElementById(id).classList.remove('on'); }
 function closeModalBg(e,id){ if(e.target.classList.contains('overlay')) closeModal(id); }
 function populateSelects(){
-  ['f-cliente','cl-sel-cliente','o-cliente'].forEach(function(sel){
+  ['f-cliente','cl-sel-cliente','o-cliente','modelo-cliente'].forEach(function(sel){
     var el=document.getElementById(sel); if(!el) return;
     el.innerHTML='<option value="">Selecione o cliente...</option>';
     clientes.forEach(function(c){ var o=document.createElement('option'); o.value=c.id; o.textContent=c.nome; el.appendChild(o); });
@@ -1676,6 +1798,7 @@ function refreshAll(){
   renderClientes();
   renderFinanceiro();
   renderOrcamentos();
+  renderModelosOrcamento();
   renderChecklistSelect();
 }
 </script>
