@@ -779,7 +779,7 @@ body::before { content:''; position:fixed; inset:0; z-index:0; pointer-events:no
 //  ⚙️  CONFIGURAÇÃO SUPABASE
 //  Cole aqui as suas credenciais do Supabase
 // ══════════════════════════════════════════════
-const SUPABASE_URL =  'https://ecqcenkznwivsovnomjn.supabase.coom';';      // ex: https://xyzabc.supabase.co
+const SUPABASE_URL =  'https://ecqcenkznwivsovnomjn.supabase.co';      // ex: https://xyzabc.supabase.co
 const SUPABASE_KEY =  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVjcWNlbmt6bndpdnNvdm5vbWpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc1MDMxNzcsImV4cCI6MjA5MzA3OTE3N30.aEvyLilhFeica9_mJ_Y8EGKuYFibuOYEC8UNrdDcye8';
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -1062,8 +1062,19 @@ async function initApp(user){
   document.getElementById('user-email-chip').textContent = email.length>18 ? email.substring(0,16)+'…' : email;
   document.getElementById('dash-date').textContent = new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   showLoad('Carregando seus dados...');
-  await loadAll();
-  refreshAll();
+  try{
+    await loadAll();
+    refreshAll();
+  }catch(e){
+    console.error('Erro ao carregar dados:', e);
+    showToast('⚠ Erro ao carregar dados. App aberto em modo seguro.');
+    clientes = clientes || [];
+    cobracas = cobracas || [];
+    orcamentos = orcamentos || [];
+    modelosOrcamento = modelosOrcamento || [];
+    checklists = checklists || {};
+    refreshAll();
+  }
 }
 
 // ══════════════════════════════════════════════
@@ -1116,19 +1127,29 @@ async function logout(){
 // ══════════════════════════════════════════════
 async function loadAll(){
   var uid = currentUser.id;
-  var [rc, rco, ro, rm, rch] = await Promise.all([
-    sb.from('clientes').select('*').eq('user_id', uid),
-    sb.from('cobracas').select('*').eq('user_id', uid),
-    sb.from('orcamentos').select('*').eq('user_id', uid),
-    sb.from('modelos_orcamento').select('*').eq('user_id', uid),
-    sb.from('checklists').select('*').eq('user_id', uid)
-  ]);
-  clientes  = rc.data  || [];
-  cobracas  = rco.data || [];
-  orcamentos = ro.data || [];
-  modelosOrcamento = rm.data || [];
+
+  async function safeQuery(label, query, fallback){
+    try{
+      var res = await query;
+      if(res.error){
+        console.warn('Erro em '+label+':', res.error.message);
+        return fallback;
+      }
+      return res.data || fallback;
+    }catch(e){
+      console.warn('Falha em '+label+':', e);
+      return fallback;
+    }
+  }
+
+  clientes = await safeQuery('clientes', sb.from('clientes').select('*').eq('user_id', uid), []);
+  cobracas = await safeQuery('cobracas', sb.from('cobracas').select('*').eq('user_id', uid), []);
+  orcamentos = await safeQuery('orcamentos', sb.from('orcamentos').select('*').eq('user_id', uid), []);
+  modelosOrcamento = await safeQuery('modelos_orcamento', sb.from('modelos_orcamento').select('*').eq('user_id', uid), []);
+  var checks = await safeQuery('checklists', sb.from('checklists').select('*').eq('user_id', uid), []);
+
   checklists = {};
-  (rch.data||[]).forEach(function(c){ checklists[c.cliente_id] = c.state || {}; });
+  (checks || []).forEach(function(c){ checklists[c.cliente_id] = c.state || {}; });
 }
 
 // ══════════════════════════════════════════════
