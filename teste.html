@@ -696,6 +696,15 @@ body::before { content:''; position:fixed; inset:0; z-index:0; pointer-events:no
     <div class="mhead"><h3>Novo Orçamento</h3><button class="mclose" onclick="closeModal('modal-orcamento')">✕</button></div>
     <div class="mbody">
       <div class="field"><label>Cliente *</label><select id="o-cliente"><option value="">Selecione...</option></select></div>
+      <div class="field">
+  <label>Tipo de Orçamento</label>
+  <select id="o-tipo">
+    <option>Simples</option>
+    <option>Completo</option>
+    <option>Renovação AVCB</option>
+    <option>Preventiva</option>
+  </select>
+</div>
       <div class="field"><label>Descrição do orçamento *</label><input id="o-desc" placeholder="Ex: Renovação AVCB, instalação, adequação..."></div>
       <div class="field"><label>Valor estimado (R$)</label><input id="o-valor" type="number" placeholder="0,00"></div>
       <div class="field"><label>PDF do orçamento *</label><input id="o-pdf" type="file" accept="application/pdf,.pdf"></div>
@@ -766,6 +775,7 @@ async function salvarOrcamento(){
       user_id: currentUser.id,
       cliente_id: cid,
       descricao: desc,
+      tipo_orcamento: document.getElementById('o-tipo').value,
       valor: valor || null,
       pdf_url: uploaded.url
     };
