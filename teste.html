@@ -920,10 +920,28 @@ observacao: observacao,
       valor: valor || null,
       
     };
+    var { data, error } = await sb
+  .from('orcamentos')
+  .insert(obj)
+  .select()
+  .single();
+
+if(error){
+  showToast('❌ Erro: '+error.message);
+  return;
+}
+
+orcamentos.unshift(data);
+closeModal('modal-orcamento');
+refreshAll();
+showToast('✅ Orçamento salvo!');
     var { data, error } = await sb.from('orcamentos').insert(obj).select().single();
     if(error){ showToast('❌ Erro: '+error.message); return; }
     orcamentos.unshift(data);
-    ['o-cliente','o-desc','o-valor','o-pdf'].forEach(function(f){ var el=document.getElementById(f); if(el) el.value=''; });
+    ['o-cliente','o-desc','o-valor','o-endereco','o-pagamento','o-observacao'].forEach(function(f){
+  var el=document.getElementById(f);
+  if(el) el.value='';
+});
     closeModal('modal-orcamento');
     refreshAll();
     showToast('✅ Orçamento salvo!');
