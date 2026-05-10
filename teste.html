@@ -918,7 +918,7 @@ pagamento: pagamento,
 observacao: observacao,
       tipo_orcamento: document.getElementById('o-tipo').value,
       valor: valor || null,
-      pdf_url: uploaded.url
+      
     };
     var { data, error } = await sb.from('orcamentos').insert(obj).select().single();
     if(error){ showToast('❌ Erro: '+error.message); return; }
