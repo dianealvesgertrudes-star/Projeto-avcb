@@ -751,7 +751,20 @@ body::before { content:''; position:fixed; inset:0; z-index:0; pointer-events:no
 </div>
       <div class="field"><label>Descrição do orçamento *</label><input id="o-desc" placeholder="Ex: Renovação AVCB, instalação, adequação..."></div>
       <div class="field"><label>Valor estimado (R$)</label><input id="o-valor" type="number" placeholder="0,00"></div>
-      <div class="field"><label>PDF do orçamento *</label><input id="o-pdf" type="file" accept="application/pdf,.pdf"></div>
+      <<div class="field">
+  <label>Endereço</label>
+  <input id="o-endereco" placeholder="Endereço do cliente">
+</div>
+
+<div class="field">
+  <label>Forma de pagamento</label>
+  <input id="o-pagamento" placeholder="Ex: até 3x no boleto">
+</div>
+
+<div class="field">
+  <label>Observação</label>
+  <textarea id="o-observacao" placeholder="Ex: orçamento válido por 30 dias"></textarea>
+</div>
     </div>
     <div class="mfoot">
       <button class="btn b-ghost" onclick="closeModal('modal-orcamento')">Cancelar</button>
