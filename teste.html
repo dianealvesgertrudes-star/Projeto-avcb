@@ -7,6 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
 <!-- Supabase SDK -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -560,7 +561,7 @@ body::before { content:''; position:fixed; inset:0; z-index:0; pointer-events:no
       <div><h1>Orça<em>mentos</em></h1><p>Biblioteca de PDFs prontos para enviar no WhatsApp</p><div class="ph-rule"></div></div>
       <div class="btn-row">
         <button class="btn b-red" onclick="openModal('modal-modelo-orcamento')">＋ Subir Modelo PDF</button>
-        <button class="btn b-ghost" onclick="openModal('modal-orcamento')">＋ Orçamento por Cliente</button>
+        <button class="btn b-ghost" onclick="openModal('modal-orcamento')">＋ Gerar Orçamento</button>
       </div>
     </div>
 
@@ -737,25 +738,27 @@ body::before { content:''; position:fixed; inset:0; z-index:0; pointer-events:no
 <!-- MODAL ORÇAMENTO -->
 <div class="overlay" id="modal-orcamento" onclick="closeModalBg(event,'modal-orcamento')">
   <div class="modal">
-    <div class="mhead"><h3>Novo Orçamento</h3><button class="mclose" onclick="closeModal('modal-orcamento')">✕</button></div>
+    <div class="mhead"><h3>Gerar Orçamento Editável</h3><button class="mclose" onclick="closeModal('modal-orcamento')">✕</button></div>
     <div class="mbody">
-      <div class="field"><label>Cliente *</label><select id="o-cliente"><option value="">Selecione...</option></select></div>
+      <div class="field"><label>Cliente *</label><select id="o-cliente" onchange="preencherEnderecoOrcamento()"><option value="">Selecione...</option></select></div>
       <div class="field">
-  <label>Tipo de Orçamento</label>
-  <select id="o-tipo">
-    <option>Simples</option>
-    <option>Completo</option>
-    <option>Renovação AVCB</option>
-    <option>Preventiva</option>
-  </select>
-</div>
-      <div class="field"><label>Descrição do orçamento *</label><input id="o-desc" placeholder="Ex: Renovação AVCB, instalação, adequação..."></div>
-      <div class="field"><label>Valor estimado (R$)</label><input id="o-valor" type="number" placeholder="0,00"></div>
-      <div class="field"><label>PDF do orçamento *</label><input id="o-pdf" type="file" accept="application/pdf,.pdf"></div>
+        <label>Tipo de Orçamento</label>
+        <select id="o-tipo" onchange="aplicarModeloOrcamento()">
+          <option value="Renovação AVCB">Renovação AVCB</option>
+          <option value="Projeto Técnico AVCB">Projeto Técnico AVCB</option>
+          <option value="Tubulação GLP">Tubulação GLP</option>
+          <option value="Reguladores / Praça GLP">Reguladores / Praça GLP</option>
+        </select>
+      </div>
+      <div class="field"><label>Endereço</label><input id="o-endereco" placeholder="Endereço do cliente"></div>
+      <div class="field"><label>Descrição / texto do serviço *</label><textarea id="o-desc" placeholder="Texto do serviço que vai aparecer no orçamento"></textarea></div>
+      <div class="field"><label>Valor (R$)</label><input id="o-valor" type="number" placeholder="0,00"></div>
+      <div class="field"><label>Forma de pagamento</label><input id="o-pagamento" placeholder="Ex: Pode ser parcelado em até 3x no boleto"></div>
+      <div class="field"><label>Observação</label><textarea id="o-observacao" placeholder="Ex: Taxas por conta do cliente. Orçamento válido por 30 dias."></textarea></div>
     </div>
     <div class="mfoot">
       <button class="btn b-ghost" onclick="closeModal('modal-orcamento')">Cancelar</button>
-      <button class="btn b-red" onclick="salvarOrcamento()">Salvar Orçamento</button>
+      <button class="btn b-red" onclick="salvarOrcamento()">📄 Gerar PDF e Salvar</button>
     </div>
   </div>
 </div>
@@ -878,36 +881,188 @@ async function excluirModeloOrcamento(id){
 }
 
 // ══════════════════════════════════════════════
-//  ORÇAMENTOS
+//  ORÇAMENTOS EDITÁVEIS COM PDF AUTOMÁTICO
 // ══════════════════════════════════════════════
+var MODELOS_ORCAMENTO_TEXTO = {
+  'Renovação AVCB': {
+    desc: 'Apresento nossa proposta para renovação de Projeto Técnico Contra Incêndio.
+
+Dos Serviços:
+• Projeto Técnico Contra Incêndio conforme Decreto Estadual 63.911/2018;
+• Medição da obra, se necessário;
+• Emissão de RRT;
+• Elaboração dos anexos necessários para aprovação;
+• Entrega do projeto e acompanhamento até emissão do AVCB ou CLCB;',
+    pagamento: 'Pode ser parcelado no cheque ou boleto em até 3 vezes.',
+    obs: 'Taxas por conta do cliente. Valor válido por 30 dias.'
+  },
+  'Projeto Técnico AVCB': {
+    desc: 'Apresento nossa proposta para elaboração de Projeto Técnico Contra Incêndio.
+
+Dos Serviços:
+• Projeto Técnico Contra Incêndio conforme Decreto Estadual 63.911/2018;
+• Medição da obra, se necessário;
+• Emissão de RRT;
+• Elaboração dos anexos necessários para aprovação;
+• Entrega do Projeto de AVCB aprovado em análise;',
+    pagamento: 'Pode ser parcelado em até 3 vezes.',
+    obs: 'Taxas por conta do cliente. Desenho em DWG poderá ser cobrado à parte caso não tenha arquivo digital. Valor válido por 30 dias.'
+  },
+  'Tubulação GLP': {
+    desc: 'Prestação de serviços de execução referente a tubulações de GLP.
+
+Proposta para execução de instalação de sistema de tubulação de GLP, visando maior segurança da edificação, visitantes, moradores e funcionários.
+
+Inclui mão de obra especializada e materiais/serviços descritos conforme necessidade do local.',
+    pagamento: 'Pagamento em até 3x.',
+    obs: 'Orçamento válido por 30 dias.'
+  },
+  'Reguladores / Praça GLP': {
+    desc: 'Prestação de serviços para instalação de reguladores e praça para sistema GLP.
+
+Serviços previstos conforme necessidade do local, incluindo mão de obra especializada e componentes necessários para instalação.',
+    pagamento: 'Pagamento em até 3x no boleto.',
+    obs: 'Orçamento válido por 30 dias.'
+  }
+};
+
+function aplicarModeloOrcamento(){
+  var tipo = document.getElementById('o-tipo').value;
+  var m = MODELOS_ORCAMENTO_TEXTO[tipo] || {};
+  if(document.getElementById('o-desc')) document.getElementById('o-desc').value = m.desc || '';
+  if(document.getElementById('o-pagamento')) document.getElementById('o-pagamento').value = m.pagamento || '';
+  if(document.getElementById('o-observacao')) document.getElementById('o-observacao').value = m.obs || '';
+}
+
+function preencherEnderecoOrcamento(){
+  var cid = document.getElementById('o-cliente').value;
+  var cl = clientes.find(function(c){ return c.id===cid; });
+  if(cl && document.getElementById('o-endereco')) document.getElementById('o-endereco').value = cl.endereco || '';
+}
+
+function moneyBR(v){
+  var n = Number(v||0);
+  return n ? n.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : '';
+}
+
+function gerarBlobPDFOrcamento(dados){
+  var jsPDF = window.jspdf && window.jspdf.jsPDF;
+  if(!jsPDF) throw new Error('Biblioteca de PDF não carregou.');
+  var doc = new jsPDF({ unit:'pt', format:'a4' });
+  var w = doc.internal.pageSize.getWidth();
+  var margin = 48;
+  var y = 42;
+
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(14);
+  doc.text('VIVA Arquitetura e Urbanismo – Prevenção de Incêndio', margin, y);
+  y += 16;
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(10);
+  doc.text('(12) 99124-8293   UBATUBA/SP', margin, y);
+  y += 24;
+  doc.setLineWidth(1);
+  doc.line(margin, y, w-margin, y);
+  y += 34;
+
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(20);
+  doc.text('ORÇAMENTO', margin, y);
+  y += 30;
+
+  doc.setFontSize(11);
+  doc.setFont('helvetica','bold'); doc.text('Cliente:', margin, y);
+  doc.setFont('helvetica','normal'); doc.text(dados.cliente || '', margin+52, y);
+  y += 18;
+  doc.setFont('helvetica','bold'); doc.text('Endereço:', margin, y);
+  doc.setFont('helvetica','normal');
+  var endLines = doc.splitTextToSize(dados.endereco || '', w-margin*2-70);
+  doc.text(endLines, margin+62, y); y += Math.max(18, endLines.length*14);
+  doc.setFont('helvetica','bold'); doc.text('Tipo:', margin, y);
+  doc.setFont('helvetica','normal'); doc.text(dados.tipo || '', margin+38, y);
+  y += 26;
+
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(11);
+  var intro = dados.tipo && dados.tipo.indexOf('GLP')>-1 ? 'PREZADO SR,' : 'Prezado Sr.';
+  doc.text(intro, margin, y); y += 20;
+
+  var lines = doc.splitTextToSize(dados.descricao || '', w-margin*2);
+  lines.forEach(function(line){
+    if(y > 760){ doc.addPage(); y = 50; }
+    doc.text(line, margin, y); y += 15;
+  });
+  y += 10;
+
+  if(dados.valor){
+    doc.setFont('helvetica','bold');
+    doc.text('TOTAL: '+moneyBR(dados.valor), margin, y);
+    y += 20;
+  }
+  if(dados.pagamento){
+    doc.setFont('helvetica','normal');
+    var pg = doc.splitTextToSize('Pagamento: '+dados.pagamento, w-margin*2);
+    doc.text(pg, margin, y); y += pg.length*15 + 8;
+  }
+  if(dados.observacao){
+    doc.setFont('helvetica','bold'); doc.text('Observação:', margin, y); y += 16;
+    doc.setFont('helvetica','normal');
+    var obs = doc.splitTextToSize(dados.observacao, w-margin*2);
+    doc.text(obs, margin, y); y += obs.length*15 + 8;
+  }
+
+  var data = new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
+  y = Math.max(y+12, 720);
+  doc.text('Ubatuba, '+data+'.', margin, y);
+
+  return doc.output('blob');
+}
+
 async function salvarOrcamento(){
   var cid = document.getElementById('o-cliente').value;
+  var tipo = document.getElementById('o-tipo').value;
   var desc = document.getElementById('o-desc').value.trim();
   var valor = parseFloat(document.getElementById('o-valor').value || '0');
-  var pdfInput = document.getElementById('o-pdf');
-  var pdfFile = pdfInput && pdfInput.files && pdfInput.files[0] ? pdfInput.files[0] : null;
-  if(!cid || !desc || !pdfFile){ showToast('⚠ Selecione cliente, descrição e PDF.'); return; }
+  var endereco = document.getElementById('o-endereco').value.trim();
+  var pagamento = document.getElementById('o-pagamento').value.trim();
+  var observacao = document.getElementById('o-observacao').value.trim();
+  if(!cid || !desc){ showToast('⚠ Selecione cliente e preencha a descrição.'); return; }
   var cl = clientes.find(function(c){ return c.id===cid; });
+  if(!cl){ showToast('⚠ Cliente não encontrado.'); return; }
   try{
-    showToast('📎 Enviando PDF do orçamento...');
-    var uploaded = await uploadToStorage(pdfFile, 'orcamentos/'+cid);
+    showToast('📄 Gerando PDF do orçamento...');
+    var blob = gerarBlobPDFOrcamento({
+      cliente: cl.nome || '',
+      endereco: endereco || cl.endereco || '',
+      tipo: tipo,
+      descricao: desc,
+      valor: valor || null,
+      pagamento: pagamento,
+      observacao: observacao
+    });
+    var fileName = 'orcamento_'+safeName(cl.nome || 'cliente')+'_'+Date.now()+'.pdf';
+    var file = new File([blob], fileName, { type:'application/pdf' });
+    var uploaded = await uploadToStorage(file, 'orcamentos/'+cid);
     var obj = {
       user_id: currentUser.id,
       cliente_id: cid,
+      tipo_orcamento: tipo,
       descricao: desc,
-      tipo_orcamento: document.getElementById('o-tipo').value,
       valor: valor || null,
+      endereco: endereco || cl.endereco || null,
+      pagamento: pagamento || null,
+      observacao: observacao || null,
       pdf_url: uploaded.url
     };
     var { data, error } = await sb.from('orcamentos').insert(obj).select().single();
     if(error){ showToast('❌ Erro: '+error.message); return; }
     orcamentos.unshift(data);
-    ['o-cliente','o-desc','o-valor','o-pdf'].forEach(function(f){ var el=document.getElementById(f); if(el) el.value=''; });
+    ['o-cliente','o-desc','o-valor','o-endereco','o-pagamento','o-observacao'].forEach(function(f){ var el=document.getElementById(f); if(el) el.value=''; });
     closeModal('modal-orcamento');
     refreshAll();
-    showToast('✅ Orçamento salvo!');
+    showToast('✅ PDF gerado e orçamento salvo!');
   }catch(e){
-    showToast('❌ Erro no PDF: '+(e.message||e));
+    showToast('❌ Erro ao gerar PDF: '+(e.message||e));
   }
 }
 
@@ -919,15 +1074,15 @@ function renderOrcamentos(){
   list.innerHTML=orcamentos.map(function(o){
     var cl=clientes.find(function(c){ return c.id===o.cliente_id; }) || {};
     var tel=(cl.telefone||'').replace(/\D/g,'');
-    var msg='Olá, '+(cl.responsavel||cl.nome||'')+'! Segue o orçamento: '+(o.descricao||'')+(o.valor?' no valor de '+fmtMoney(o.valor):'')+'. PDF: '+(o.pdf_url||'');
+    var msg='Olá, '+(cl.responsavel||cl.nome||'')+'! Segue o orçamento '+(o.tipo_orcamento||'')+': '+(o.descricao||'')+(o.valor?' no valor de '+fmtMoney(o.valor):'')+'. PDF: '+(o.pdf_url||'');
     var wa=tel ? 'https://wa.me/55'+tel+'?text='+encodeURIComponent(msg) : '';
     return '<div class="orc-card">'
       +'<div><div class="orc-title">'+(cl.nome||'Cliente')+'</div>'
-      +'<div class="orc-sub">'+(o.tipo_orcamento?o.tipo_orcamento+' · ':'')+(o.descricao||'Orçamento')+' · '+(o.valor?fmtMoney(o.valor):'sem valor')+'</div></div>'
+      +'<div class="orc-sub">'+(o.tipo_orcamento?o.tipo_orcamento+' · ':'')+(o.valor?fmtMoney(o.valor):'sem valor')+(o.endereco?' · '+o.endereco:'')+'</div></div>'
       +'<div class="orc-actions">'
       +(o.pdf_url?'<a class="btn b-ghost" href="'+o.pdf_url+'" target="_blank">📄 Abrir PDF</a>':'')
-      +(wa?'<a class="btn b-green" href="'+wa+'" target="_blank">📲 WhatsApp</a>':'<button class="btn b-ghost" onclick="showToast(\'⚠ Cliente sem telefone\')">📲 WhatsApp</button>')
-      +'<button class="btn b-ghost" onclick="excluirOrcamento(\''+o.id+'\')">🗑 Excluir</button>'
+      +(wa?'<a class="btn b-green" href="'+wa+'" target="_blank">📲 WhatsApp</a>':'<button class="btn b-ghost" onclick="showToast('⚠ Cliente sem telefone')">📲 WhatsApp</button>')
+      +'<button class="btn b-ghost" onclick="excluirOrcamento(''+o.id+'')">🗑 Excluir</button>'
       +'</div></div>';
   }).join('');
 }
@@ -1183,6 +1338,7 @@ function syncTabHighlight(id){
 // ══════════════════════════════════════════════
 function openModal(id){
   if(id==='modal-cobranca'||id==='modal-checklist'||id==='modal-orcamento'||id==='modal-enviar-modelo') populateSelects();
+  if(id==='modal-orcamento'){ setTimeout(function(){ preencherEnderecoOrcamento(); aplicarModeloOrcamento(); }, 50); }
   document.getElementById(id).classList.add('on');
 }
 function closeModal(id){ document.getElementById(id).classList.remove('on'); }
