@@ -374,6 +374,7 @@ body::before { content:''; position:fixed; inset:0; z-index:0; pointer-events:no
 }
 
 </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 
@@ -893,7 +894,37 @@ async function excluirModeloOrcamento(id){
 // ══════════════════════════════════════════════
 //  ORÇAMENTOS
 // ══════════════════════════════════════════════
-async function salvarOrcamento(){
+async function gerarPdfOrcamento(dados){
+
+  const { jsPDF } = window.jspdf;
+
+  const doc = new jsPDF();
+
+  doc.setFontSize(22);
+  doc.text("ORÇAMENTO", 20, 20);
+
+  doc.setFontSize(12);
+
+  doc.text("Cliente: " + dados.cliente, 20, 40);
+  doc.text("Tipo: " + dados.tipo, 20, 50);
+  doc.text("Descrição: " + dados.descricao, 20, 60);
+  doc.text("Valor: R$ " + dados.valor, 20, 70);
+  doc.text("Endereço: " + dados.endereco, 20, 80);
+  doc.text("Pagamento: " + dados.pagamento, 20, 90);
+
+  doc.text("Observação:", 20, 110);
+
+  doc.text(dados.observacao || '-', 20, 120);
+
+  const pdfBlob = doc.output('blob');
+
+  return new File(
+    [pdfBlob],
+    'orcamento.pdf',
+    { type:'application/pdf' }
+  );
+}
+  async function salvarOrcamento(){
   var cid = document.getElementById('o-cliente').value;
   var desc = document.getElementById('o-desc').value.trim();
   var valor = parseFloat(document.getElementById('o-valor').value || '0');
@@ -902,14 +933,28 @@ async function salvarOrcamento(){
   showToast('⚠ Preencha cliente e descrição.');
   return;
 }
-  var cl = clientes.find(function(c){ return c.id===cid; });
+  
+});
   try{
     showToast(' Salvando orçamento...');
+    var uploaded = await uploadToStorage(pdfFile, 'orcamentos/'+cid);
     
     var endereco = document.getElementById('o-endereco').value;
 var pagamento = document.getElementById('o-pagamento').value;
 var observacao = document.getElementById('o-observacao').value;
+    var pdfFile = await gerarPdfOrcamento({
+  cliente: cl.nome || '',
+  tipo: document.getElementById('o-tipo').value,
+  descricao: desc,
+  valor: valor,
+  endereco: endereco,
+  pagamento: pagamento,
+  observacao: observacao
+});
+
     var obj = {
+     
+
       user_id: currentUser.id,
       cliente_id: cid,
       descricao: desc,
@@ -918,6 +963,7 @@ pagamento: pagamento,
 observacao: observacao,
       tipo_orcamento: document.getElementById('o-tipo').value,
       valor: valor || null,
+      pdf_url: uploaded.url,
       
     };
     var { data, error } = await sb
