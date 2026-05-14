@@ -1033,6 +1033,10 @@ body::before {
       <button class="mclose" onclick="closeModal('modal-orc-textos')">✕</button>
     </div>
     <div class="mbody">
+      <div class="field">
+        <label>Texto do modelo original</label>
+        <textarea id="ot-modelo-original" readonly style="min-height:180px;background:#111;color:var(--white);"></textarea>
+      </div>
       <div class="field"><label>Forma de pagamento</label><input id="ot-pagamento" placeholder="Ex: Pode ser parcelado no boleto em até 3 vezes."></div>
       <div class="field"><label>Validade da proposta</label><input id="ot-validade" placeholder="Ex: Orçamento válido por 30 dias."></div>
       <div class="field"><label>Observação</label><textarea id="ot-observacao" placeholder="Ex: Taxa por conta do cliente."></textarea></div>
@@ -1531,6 +1535,65 @@ var ORCAMENTO_TIPOS = {
   }
 };
 
+var ORCAMENTO_TEXTOS_ORIGINAIS = {
+  'renovacao-avcb':
+    'ORÇAMENTO\\n\\n'+
+    'Cliente: Mercado Paulino\\n'+
+    'Endereço: AV. Padre Manoel da Nobrega Nº1649 - Perequê Açu, Ubatuba - SP.\\n\\n'+
+    'Prezado Sr.\\n'+
+    'Apresento nossa proposta para renovação de Projeto Técnico Contra Incêndio.\\n\\n'+
+    'Informações de Projeto:\\n'+
+    'Trata-se de um projeto de um prédio de uso comercial.\\n\\n'+
+    'Dos Serviços:\\n'+
+    '- Projeto Técnico Contra Incêndio conforme Decreto Estadual 63.911/2018;\\n'+
+    '- Medição da obra, se necessário;\\n'+
+    '- Emissão de RRT;\\n'+
+    '- Elaboração de todos os anexos necessários para aprovação;\\n'+
+    '- Entrega do projeto e acompanhamento até emissão do AVCB ou CLCB;\\n\\n'+
+    'Valor do serviço e total são preenchidos automaticamente.\\n'+
+    'Observação: Taxa por conta do cliente.\\n'+
+    'Valor válido por 30 dias.',
+
+  'projeto-tecnico-avcb':
+    'ORÇAMENTO\\n\\n'+
+    'Cliente: Condomínio Residencial Quintas do Itaguá.\\n'+
+    'Endereço: Rua Xavantes 210, Barra da Lagoa, Ubatuba/SP.\\n\\n'+
+    'Prezado Sr.\\n'+
+    'Apresento nossa proposta para elaboração de Projeto Técnico Contra Incêndio.\\n\\n'+
+    'Informações de Projeto:\\n'+
+    'Trata-se de um projeto de prédio residencial, com atividade de residência multifamiliar.\\n\\n'+
+    'Dos Serviços:\\n'+
+    '- Projeto Técnico Contra Incêndio conforme Decreto Estadual 63.911/2018;\\n'+
+    '- Medição da obra, se necessário;\\n'+
+    '- Emissão de RRT;\\n'+
+    '- Elaboração de todos os anexos necessários para aprovação;\\n'+
+    '- Entrega do projeto de AVCB aprovado em análise;\\n\\n'+
+    'Valor do serviço e total são preenchidos automaticamente.\\n'+
+    'Observação: Taxa por conta do cliente.\\n'+
+    'Desenho em DWG R$2,00 o metro quadrado caso não tenha o arquivo digital.\\n'+
+    'Valor válido por 30 dias.',
+
+  'tubulacao-glp':
+    'ORÇAMENTO\\n\\n'+
+    'Nome do Estabelecimento: Casa do Otavio\\n'+
+    'Endereço: Praia Grande - Ubatuba - SP.\\n'+
+    'Referente Proposta: Prestação de serviços de execução referente a tubulações de GLP.\\n\\n'+
+    'PREZADO SR\\n'+
+    'Em continuidade aos entendimentos havidos, submetemos à apreciação de V.S.ª nossa proposta de prestação de serviços para execução de instalação de sistema de tubulação de GLP, visando maior segurança da edificação, das pessoas visitantes, crianças e funcionários.\\n\\n'+
+    'ORÇAMENTO DE MÃO DE OBRA E MATERIAL PARA INSTALAÇÃO DE SISTEMA GLP E SUAS TUBULAÇÕES.\\n'+
+    'O total, pagamento, validade e data são preenchidos automaticamente.',
+
+  'praca-glp':
+    'ORÇAMENTO\\n\\n'+
+    'Nome do Estabelecimento: Condomínio Tabatinga\\n'+
+    'Endereço: Apartamento A-411 - Tabatinga Caraguatatuba - SP.\\n'+
+    'Referente Proposta: Prestação de serviços de execução referente a tubulações de GLP.\\n\\n'+
+    'PREZADO SR\\n'+
+    'Em continuidade aos entendimentos havidos, submetemos à apreciação de V.S.ª nossa proposta de prestação de serviços para execução de instalação de sistema de tubulação de GLP, visando maior segurança da edificação, das pessoas visitantes, crianças e funcionários.\\n\\n'+
+    'ORÇAMENTO DOS REGULADORES E PRAÇAS PARA INSTALAÇÃO DE SISTEMA GLP.\\n'+
+    'O total, pagamento, validade e data são preenchidos automaticamente.'
+};
+
 function renderOrcamentoSelect(){
   populateSelects();
   var data=document.getElementById('o-data');
@@ -1597,6 +1660,8 @@ function getTextosOrcamento(){
 }
 function abrirEditorTextosOrcamento(){
   var t=getTextosOrcamento();
+  var tipo=document.getElementById('o-tipo').value;
+  document.getElementById('ot-modelo-original').value=ORCAMENTO_TEXTOS_ORIGINAIS[tipo]||'';
   document.getElementById('ot-pagamento').value=t.pagamento||'';
   document.getElementById('ot-validade').value=t.validade||'';
   document.getElementById('ot-observacao').value=t.observacao||'';
