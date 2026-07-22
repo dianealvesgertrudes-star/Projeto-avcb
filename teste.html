@@ -1203,7 +1203,7 @@ async function carregarClientesDaNuvem(){
         area: c.area || '',
         andares: c.andares || '',
         end: c.endereco || c.end || '',
-        venc: c.vencimento || c.venc || '',
+        venc: c.vencimento_avcb || c.vencimento || c.venc || '',
         obs: c.obs || c.observacoes || '',
         criado: c.criado_em || c.created_at || new Date().toISOString()
       };
@@ -1226,7 +1226,7 @@ async function salvarClienteNaNuvem(cliente){
       tipo: cliente.tipo,
       responsavel: cliente.resp,
       telefone: cliente.tel,
-      vencimento: cliente.venc
+      vencimento_avcb: cliente.venc
     }])
     .select()
     .single();
@@ -1315,7 +1315,7 @@ function getDaysLeft(v){
   var h=new Date();h.setHours(0,0,0,0);
   return Math.round((new Date(v+'T00:00:00')-h)/86400000);
 }
-function getStatus(d){return d<0?'crit':d<=30?'warn':'ok'}
+function getStatus(d){return !Number.isFinite(d)?'crit':d<0?'crit':d<=30?'warn':'ok'}
 function initials(n){var p=n.split(' ');return p.length>=2?(p[0][0]+p[1][0]).toUpperCase():n.substring(0,2).toUpperCase()}
 function fmtMoney(v){return 'R$'+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0})}
 function fmtMoneyPdf(v){return 'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}
